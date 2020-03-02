@@ -109,7 +109,7 @@ public final class Pair<L, R> {
         }
     }
 
-    public Pair(L left, R right) {
+    private Pair(L left, R right) {
         this.left = left;
         this.right = right;
     }
