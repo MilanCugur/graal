@@ -192,7 +192,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             @Override
             protected TraversalState processBlock(Block block, TraversalState currentState) {
-                if (block.getEndNode() instanceof ControlSplitNode) {
+//                if(block.getBeginNode() instanceof LoopExitNode){
+//                    if(currentState.getPath().size()!=0) System.out.println("Error: current path on LoopExit must be empty.");
+//                    List<Block> loopExitPath = new ArrayList<>();
+//                    loopExitPath.add(block);
+//                    ControlSplit fatherCS = findControlSplitFather(splits, loopExitPath);
+//                    if (fatherCS != null)
+//                        fatherCS.addASon(loopExitPath);
+//                    else {
+//                        System.out.print(block.getNodes());
+//                        for(Block pred : block.getPredecessors())
+//                            System.out.print(pred.getNodes().toString()+" "); // pa ok je da nema to je neki kasiniji path, bez oca, kad krene merge ili nesto
+//                        System.out.println();
+//                    }
+//                }
+                if (block.getEndNode() instanceof ControlSplitNode && !(block.getBeginNode() instanceof LoopBeginNode)) {  // don't add loops if to "splits"
                     String ime = ((Node) block.getEndNode()).toString();  // for debugging purpose
                     splits.push(new ControlSplit(block, currentState.getPath()));  // add control split currently being processed
                     currentState.clearPath();                                      // clear path, fresh restart (for immediate one)
@@ -277,6 +291,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             @Override
             protected List<TraversalState> processLoop(Loop<Block> loop, TraversalState initialState) {
                 // TODO: Vidi ovde kako hocu petlje da obradjujem
+//                synchronized (writer) {  // Parse Loops ControlSplit
+//                    long graphId = graph.graphId();
+//                    Block head = loop.getHeader();
+//                    int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
+//                    if(head.getSuccessorCount()!=2) {
+//                        System.out.println("loop sa !=2 naslednika, cudno!%nHEAD:");
+//                        System.out.println(head.getNodes());
+//                        for (Block succ : head.getSuccessors())
+//                            System.out.println(succ.getNodes());
+//                        System.out.println();
+//                    }
+//
+//                    writer.printf("%d, %d (loop), %d, \"%s\"", graphId, nodeId, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
+//                    writer.printf(", \"%s\"", loop.getBlocks());
+//                    writer.printf(", \"%s\"", head.getSuccessors()[1]);
+//                    writer.printf("%n");
+//                }
                 return ReentrantBlockIterator.processLoop(this, loop, initialState).exitStates;
             }
         };

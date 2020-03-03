@@ -61,13 +61,13 @@ public class HighTier extends BaseTier<HighTierContext> {
     }
 
     public HighTier(OptionValues options) {
-        CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);
-        appendPhase(canonicalizer);
-
-        /* Added "ParseImportantFeaturesPhase here */
+        /* Added "ParseImportantFeaturesPhase here - move it before the canonicalizer phase */
         if(ParseImportantFeaturesPhase.Options.ParseImportantFeatures.getValue(options)) {
             appendPhase(new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT));
         }
+
+        CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);
+        appendPhase(canonicalizer);
 
         if (NodeCounterPhase.Options.NodeCounters.getValue(options)) {
             appendPhase(new NodeCounterPhase(NodeCounterPhase.Stage.INIT));
