@@ -200,7 +200,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     ControlSplit fatherCS = findControlSplitFather(splits, loopExitPath);
                     if (fatherCS != null) {
                         fatherCS.addASon(loopExitPath);
-                        fatherCS.setTailNode(block.getBeginNode());  // Add block to loop Control Split for purpose of backpropagation
+                        fatherCS.setTailNode(block.getBeginNode());  // Add block to loops Control Split for purpose of blocks backpropagation
                     }
                     // It can happen that this loop exit doesn't have a father: no action
                 }
@@ -215,6 +215,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath());
                         if (fatherCS != null)
                             fatherCS.addASon(currentState.getPath());
+                        else {  // If no one waits for me as a son, look at a theirs tails; specific need for real end of a graph (backpropagation blocks upwards)
+                            fatherCS = findTailFather(splits, currentState.getPath());
+                            if (fatherCS != null)
+                                fatherCS.setTailBlocks(currentState.getPath());
+                        }
                         // else - no one to catch
                         // currentState path will be reset on ReentrantBlockIterator.java, @ line 170.
                     } else if (block.getSuccessors().length == 1) {  // I have only one successor
