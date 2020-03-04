@@ -56,7 +56,7 @@ class ControlSplit {  // Representation of a control split
     private Integer nsons;           // Number of sons
     private List<List<Block>> sons;  // Completed sons
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
-    private AbstractMergeNode tailNode;  // If I go through my personal merge and I am not complete at that time
+    private AbstractBeginNode tailNode;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
     private List<Block> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -95,8 +95,8 @@ class ControlSplit {  // Representation of a control split
 
     public EconomicSet<AbstractBeginNode> getSonsHeads() { return sonsHeads; }
 
-    public AbstractMergeNode getTailNode() { return tailNode; }
-    public void setTailNode(AbstractMergeNode tailNode) { this.tailNode = tailNode; } // todo: can I wait more than one; override wait? print debug
+    public AbstractBeginNode getTailNode() { return tailNode; }
+    public void setTailNode(AbstractBeginNode tailNode) { this.tailNode = tailNode; } // todo: can I wait more than one; override wait? print debug
     public List<Block> getTailBlocks() { return tailBlocks; }
     public void setTailBlocks(List<Block> tailBlocks) {
         if(tailBlocks.get(0).getBeginNode()!=this.tailNode)
@@ -198,8 +198,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     List<Block> loopExitPath = new ArrayList<>();
                     loopExitPath.add(block);
                     ControlSplit fatherCS = findControlSplitFather(splits, loopExitPath);
-                    if (fatherCS != null)
+                    if (fatherCS != null) {
                         fatherCS.addASon(loopExitPath);
+                        fatherCS.setTailNode(block.getBeginNode());  // Add block to loop Control Split for purpose of backpropagation
+                    }
                     // It can happen that this loop exit doesn't have a father: no action
                 }
                 if (block.getEndNode() instanceof ControlSplitNode) {  // don't add loops if to "splits": && !(block.getBeginNode() instanceof LoopBeginNode)
@@ -246,7 +248,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
                     if (personalMerge(splits.peek(), merge)) {
                         assert splits.peek().getTailNode() != null : "Error: Going through the same merge node twice.";
-                        splits.peek().setTailNode((AbstractMergeNode) merge.getBeginNode());
+                        splits.peek().setTailNode(merge.getBeginNode());
                         return new TraversalState();
                     }
                 }
@@ -271,7 +273,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                     fatherCS.addASon(newPath);
                             } else if (tailCS != null) {
                                 // JUST ADD TO APPROPRIATE TAIL
-                                tailCS.setTailBlocks(newPath);
+                                if (personalMerge(stacksTop, merge))  // newly added
+                                    return new TraversalState(newPath);  // newly added
+                                else  // newly added
+                                    tailCS.setTailBlocks(newPath);
                             } else
                                 continue; // Son not added; all control splits are full
                         }
