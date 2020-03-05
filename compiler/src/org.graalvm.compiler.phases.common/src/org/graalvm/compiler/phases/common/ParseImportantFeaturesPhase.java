@@ -192,18 +192,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             @Override
             protected TraversalState processBlock(Block block, TraversalState currentState) {
-                if (block.getBeginNode() instanceof LoopExitNode) {
-                    if (currentState.getPath().size() != 0)
-                        System.out.println("Error: current path on LoopExit must be empty.");
-                    List<Block> loopExitPath = new ArrayList<>();
-                    loopExitPath.add(block);
-                    ControlSplit fatherCS = findControlSplitFather(splits, loopExitPath);
-                    if (fatherCS != null) {
-                        fatherCS.addASon(loopExitPath);
-                        fatherCS.setTailNode(block.getBeginNode());  // Add block to loops Control Split for purpose of blocks backpropagation
-                    }
-                    // It can happen that this loop exit doesn't have a father: no action
-                }
+//                if (block.getBeginNode() instanceof LoopExitNode) {
+//                    if (currentState.getPath().size() != 0)
+//                        System.out.println("Error: current path on LoopExit must be empty.");
+//                    List<Block> loopExitPath = new ArrayList<>();
+//                    loopExitPath.add(block);
+//                    ControlSplit fatherCS = findControlSplitFather(splits, loopExitPath);
+//                    if (fatherCS != null) {  // && fatherCS.getBlock().getSuccessorCount()==2: do it only for ifs (break statement) - not for switch
+//                        fatherCS.addASon(loopExitPath);
+//                        fatherCS.setTailNode(block.getBeginNode());  // Add block to loop Control Split for purpose of blocks backpropagation
+//                    }
+//                    // It can happen that this loop exit doesn't have a father: no action; TODO: VIDI Kakva je to situacija kad loop exit nema oca, NEKO VEC POPUNIO OCA?
+//                }
                 if (block.getEndNode() instanceof ControlSplitNode) {  // don't add loops if to "splits": && !(block.getBeginNode() instanceof LoopBeginNode)
                     String ime = ((Node) block.getEndNode()).toString();  // for debugging purpose
                     splits.push(new ControlSplit(block, currentState.getPath()));  // add control split currently being processed

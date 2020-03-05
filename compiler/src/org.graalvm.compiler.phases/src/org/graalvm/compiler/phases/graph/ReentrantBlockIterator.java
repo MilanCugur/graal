@@ -127,7 +127,7 @@ public final class ReentrantBlockIterator {
                 Block[] successors = current.getSuccessors();
                 if (successors.length == 0) {
                     // nothing to do...
-               } else if (successors.length == 1) {
+                } else if (successors.length == 1) {
                     Block successor = successors[0];
                     if (successor.isLoopHeader()) {
                         if (current.isLoopEnd()) {
