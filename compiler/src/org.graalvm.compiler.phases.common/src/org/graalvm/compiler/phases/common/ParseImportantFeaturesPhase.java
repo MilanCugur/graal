@@ -253,6 +253,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
                     if (personalMerge(splits.peek(), merge)) {
                         assert splits.peek().getTailNode() != null : "Error: Going through the same merge node twice.";
+                        if(splits.peek().getTailNode() != null)
+                            System.out.println("Okej idem x2 to i kontam da hocu!");
                         splits.peek().setTailNode(merge.getBeginNode());
                         return new TraversalState();
                     }
@@ -435,7 +437,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             long graphId = graph.graphId();
             int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
 
-            writer.printf("%d, %d, %d, \"%s\"", graphId, nodeId, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
+            writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
             for (int i = 0; i < nsons; i++)
                 writer.printf(", \"%s\"", sons.get(i));
             writer.printf("%n");
@@ -472,11 +474,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             long graphId = graph.graphId();
             int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
 
-            writer.printf("%d, %d, %d, \"%s\"", graphId, nodeId, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
+            writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
             for (int i = 0; i < nsons; i++)
                 writer.printf(", \"%s\"", sons.get(i));
             for(AbstractBeginNode unfinishedSon : cs.getSonsHeads()) // write out unfinished sons heads
                 writer.printf(", UNFINISHED SONS HEADS: \"%s\"", unfinishedSon.toString());
+            if(cs.getSonsHeads().size()>0)
+                writer.printf("%n%d, \"%s\"", graphId, graph.toString()); // get out the method source code
 
             writer.printf("%n");
         }
