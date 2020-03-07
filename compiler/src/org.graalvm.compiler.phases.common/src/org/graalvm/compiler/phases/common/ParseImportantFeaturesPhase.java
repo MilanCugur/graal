@@ -207,7 +207,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (block.getEndNode() instanceof ControlSplitNode) {  // don't add loops if to "splits": && !(block.getBeginNode() instanceof LoopBeginNode)
                     String ime = ((Node) block.getEndNode()).toString();  // for debugging purpose
                     splits.push(new ControlSplit(block, currentState.getPath()));  // add control split currently being processed
-                    currentState.clearPath();                                      // clear path, fresh restart (for immediate one)
+                    currentState.clearPath();                                      // clear path, fresh 3restart (for immediate one)
                 } else {
                     currentState.addBlockToPath(block);
 
@@ -337,7 +337,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     assert blockEndStates.containsKey(loopExit.getBeginNode()) : loopExit.getBeginNode() + " " + blockEndStates;
                     TraversalState exitState = blockEndStates.get(loopExit.getBeginNode());
                     // make sure all exit states are unique objects
-                    info.exitStates.add(this.cloneState(exitState));
+                    info.exitStates.add(exitState);  // this.cloneState(exitState) for unfinished sons error - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
                 }
                 return info.exitStates;
             }
