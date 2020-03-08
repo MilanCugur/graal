@@ -56,7 +56,7 @@ class ControlSplit {  // Representation of a control split
     private Integer nsons;           // Number of sons
     private List<List<Block>> sons;  // Completed sons
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
-    private AbstractBeginNode tailNode;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
+    private EconomicSet<AbstractBeginNode> tailNodes;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
     private List<Block> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -69,7 +69,7 @@ class ControlSplit {  // Representation of a control split
         this.sonsHeads =  EconomicSet.create(Equivalence.IDENTITY);
         for(Block son: block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
-        this.tailNode = null;
+        this.tailNodes = EconomicSet.create(Equivalence.IDENTITY);
         this.tailBlocks = null;
     }
 
@@ -95,14 +95,21 @@ class ControlSplit {  // Representation of a control split
 
     public EconomicSet<AbstractBeginNode> getSonsHeads() { return sonsHeads; }
 
-    public AbstractBeginNode getTailNode() { return tailNode; }
-    public void setTailNode(AbstractBeginNode tailNode) { this.tailNode = tailNode; } // todo: can I wait more than one; override wait? print debug
+    //public AbstractBeginNode getTailNode() { return tailNode; }
+    public boolean areInTails(AbstractBeginNode node){
+        return this.tailNodes.contains(node);
+    }
+    public void setTailNode(AbstractBeginNode tailNode) { this.tailNodes.add(tailNode); } // todo: can I wait more than one; override wait? print debug
     public List<Block> getTailBlocks() { return tailBlocks; }
     public void setTailBlocks(List<Block> tailBlocks) {
-        if(tailBlocks.get(0).getBeginNode()!=this.tailNode)
+        AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
+        if(!this.tailNodes.contains(node))
             System.out.println("NE CEKAM NA OVOG!");
 
-        this.tailBlocks = new ArrayList<>(tailBlocks);
+        if(this.tailBlocks==null)
+            this.tailBlocks = new ArrayList<Block>();
+
+        this.tailBlocks.addAll(new ArrayList<Block>(tailBlocks));
     }
 }
 
@@ -251,13 +258,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                 if (splits.size() > 0 && !splits.peek().finished()) {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
-                    if (personalMerge(splits.peek(), merge)) {
-                        assert splits.peek().getTailNode() != null : "Error: Going through the same merge node twice.";
-                        if(splits.peek().getTailNode() != null)
-                            System.out.println("Okej idem x2 to i kontam da hocu!");
-                        splits.peek().setTailNode(merge.getBeginNode());
-                        return new TraversalState();
-                    }
+                    //if (personalMerge(splits.peek(), merge)) {
+                    //?
+                    // dodaj uvek kada si na finished mergeu a splits.peek nije gotov; OVO CE DA PUKNE, POPRAVICU ALI NISAM SIGURAN SAMO DA LI JE OKEJ SAMO DA DODAM TOM KOJI NIJE ZAVRSEN!
+                    //assert splits.peek().getTailNode() != null : "Error: Going through the same merge node twice.";
+                    //if(splits.peek().getTailNode() != null)
+                    //    System.out.println("Okej idem x2 to i kontam da hocu!");
+                    splits.peek().setTailNode(merge.getBeginNode());
+                    return new TraversalState();
                 }
 
                 while (splits.size() > 0) {
@@ -395,7 +403,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         if(path==null || path.size()==0) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).getTailNode()==path.get(0).getBeginNode())
+            if (splits.get(i).areInTails(path.get(0).getBeginNode()))
                 break;
         }
         if (i == -1)
