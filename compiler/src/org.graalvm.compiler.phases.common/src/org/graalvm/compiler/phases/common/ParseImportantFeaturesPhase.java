@@ -307,6 +307,47 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         };
 
+        ReentrantBlockIterator.BlockIteratorClosure<TraversalState> CSClosureVisitor = new ReentrantBlockIterator.BlockIteratorClosure<TraversalState>() {
+            @Override
+            protected TraversalState getInitialState() {
+                return null;
+            }
+
+            @Override
+            protected TraversalState processBlock(Block block, TraversalState currentState) {
+                if (block.getEndNode() instanceof ControlSplitNode) {
+                    synchronized (writer) {
+                        long graphId = graph.graphId();
+                        int nodeId = ((Node) block.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) block.getEndNode()).getNodeSourcePosition().getBCI();
+
+                        writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, block, ((Node) block.getEndNode()).getId(), ((Node) block.getEndNode()).toString());
+                        for (int i = 0; i < block.getSuccessorCount(); i++)
+                            writer.printf(", \"%s\"", block.getSuccessors()[i]);
+                        writer.printf("%n");
+                    }
+                }
+                return currentState;
+            }
+
+            @Override
+            protected TraversalState merge(Block merge, List<TraversalState> states) {
+                return null;
+            }
+
+            @Override
+            protected TraversalState cloneState(TraversalState oldState) {
+                return oldState;
+            }
+
+            @Override
+            protected List<TraversalState> processLoop(Loop<Block> loop, TraversalState initialState) {
+                return ReentrantBlockIterator.processLoop(this, loop, initialState).exitStates;
+            }
+        };
+
+        ReentrantBlockIterator.apply(CSClosureVisitor, r.getCFG().getStartBlock());
+
+        /*
         ReentrantBlockIterator.apply(CSClosure, r.getCFG().getStartBlock());
 
         // Flush [finished] Control Splits from the stack as the end of the iteration process
@@ -327,7 +368,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 else
                     continue; // Son not added; no one waiting for this path as a son; continue flushing splits
             }
-        }
+        }*/
     }
 
     private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge){
