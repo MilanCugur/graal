@@ -47,7 +47,8 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-class ControlSplit {  // Representation of a control split
+/* Representation of a control split */
+class ControlSplit {
     private Block block;             // Block which is ended with control split node
     private List<Block> pathToBlock; // The path leading to this block
     private Integer nsons;           // Number of sons
@@ -57,7 +58,8 @@ class ControlSplit {  // Representation of a control split
     private List<List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
-        assert block.getEndNode() instanceof ControlSplitNode : "Control Split can be instantiated only with Control Split Node (as end).";  // Can instantiate only with control split nodes
+        if(!(block.getEndNode() instanceof ControlSplitNode))
+            System.out.println("ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).");
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
         ControlSplitNode endnode = (ControlSplitNode) block.getEndNode();
@@ -111,30 +113,24 @@ class ControlSplit {  // Representation of a control split
     }
 }
 
-class TraversalState {  // Intermediate state while traversing graph
-    private List<Block> path;        // List of blocks visited so far
+/* Graph traversal intermediate state representation */
+class TraversalState {
+    private List<Block> path;  // List of blocks visited so far
 
     public TraversalState() {
         this.path = new ArrayList<>();
     }
-    public TraversalState(Block block) {
-        this.path = new ArrayList<>();
-        this.path.add(block);
-    }
     public TraversalState(List<Block> path){
-        if(path!=null)
-            this.path = new ArrayList<>(path);
-        else
+        if(path==null)
             this.path = new ArrayList<>();
-    }
-    public TraversalState(TraversalState state){
-        this.path = new ArrayList<>(state.getPath());
+        else
+            this.path = new ArrayList<>(path);
     }
 
-    public void addBlockToPath(Block block) { this.path.add(block); }
-    public void addBlocksToPath(List<Block> blocks){ this.path.addAll(blocks); }
-    public void clearPath(){ this.path.clear(); }
     public List<Block> getPath() { return this.path; }
+
+    public void addBlockToPath(Block block) { this.path.add(block); }
+    public void clearPath(){ this.path.clear(); }
 }
 
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
@@ -143,7 +139,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private static PrintWriter writer;
 
-    static {
+    static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
             writer.printf("Graph Id, Node BCI, Node Id, Node Description, Number of blocks%n");
@@ -307,47 +303,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         };
 
-        ReentrantBlockIterator.BlockIteratorClosure<TraversalState> CSClosureVisitor = new ReentrantBlockIterator.BlockIteratorClosure<TraversalState>() {
-            @Override
-            protected TraversalState getInitialState() {
-                return null;
-            }
-
-            @Override
-            protected TraversalState processBlock(Block block, TraversalState currentState) {
-                if (block.getEndNode() instanceof ControlSplitNode) {
-                    synchronized (writer) {
-                        long graphId = graph.graphId();
-                        int nodeId = ((Node) block.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) block.getEndNode()).getNodeSourcePosition().getBCI();
-
-                        writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, block, ((Node) block.getEndNode()).getId(), ((Node) block.getEndNode()).toString());
-                        for (int i = 0; i < block.getSuccessorCount(); i++)
-                            writer.printf(", \"%s\"", block.getSuccessors()[i]);
-                        writer.printf("%n");
-                    }
-                }
-                return currentState;
-            }
-
-            @Override
-            protected TraversalState merge(Block merge, List<TraversalState> states) {
-                return null;
-            }
-
-            @Override
-            protected TraversalState cloneState(TraversalState oldState) {
-                return oldState;
-            }
-
-            @Override
-            protected List<TraversalState> processLoop(Loop<Block> loop, TraversalState initialState) {
-                return ReentrantBlockIterator.processLoop(this, loop, initialState).exitStates;
-            }
-        };
-
-        ReentrantBlockIterator.apply(CSClosureVisitor, r.getCFG().getStartBlock());
-
-        /*
         ReentrantBlockIterator.apply(CSClosure, r.getCFG().getStartBlock());
 
         // Flush [finished] Control Splits from the stack as the end of the iteration process
@@ -368,7 +323,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 else
                     continue; // Son not added; no one waiting for this path as a son; continue flushing splits
             }
-        }*/
+        }
     }
 
     private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge){
