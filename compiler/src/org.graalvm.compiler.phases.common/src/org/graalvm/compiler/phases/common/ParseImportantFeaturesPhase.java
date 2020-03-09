@@ -53,8 +53,8 @@ class ControlSplit {  // Representation of a control split
     private Integer nsons;           // Number of sons
     private List<List<Block>> sons;  // Completed sons
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
-    private AbstractBeginNode tailNode;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
-    private List<Block> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
+    private List<AbstractBeginNode> tailNodes; // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
+    private List<List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
         assert block.getEndNode() instanceof ControlSplitNode : "Control Split can be instantiated only with Control Split Node (as end).";  // Can instantiate only with control split nodes
@@ -66,8 +66,8 @@ class ControlSplit {  // Representation of a control split
         this.sonsHeads =  EconomicSet.create(Equivalence.IDENTITY);
         for(Block son: block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
-        this.tailNode = null;
-        this.tailBlocks = null;
+        this.tailNodes = new ArrayList<AbstractBeginNode>();
+        this.tailBlocks = new ArrayList<List<Block>>();
     }
 
     public void addASon(List<Block> sonsPath){
@@ -91,14 +91,23 @@ class ControlSplit {  // Representation of a control split
 
     public EconomicSet<AbstractBeginNode> getSonsHeads() { return sonsHeads; }
 
-    public AbstractBeginNode getTailNode() { return tailNode; }
-    public void setTailNode(AbstractBeginNode tailNode) { this.tailNode = tailNode; } // TODO: can I wait more than one
-    public List<Block> getTailBlocks() { return tailBlocks; }
+    //public AbstractBeginNode getTailNode() { return tailNode; }
+    public boolean areInTails(AbstractBeginNode node){
+        return this.tailNodes.contains(node);
+    }
+    public void setTailNode(AbstractBeginNode tailNode) {
+        this.tailNodes.add(tailNode);
+        this.tailBlocks.add(null);
+    } // TODO: can I wait more than one
+    public List<AbstractBeginNode> getTailNodes(){ return tailNodes; }
+    public List<List<Block>> getTailBlocks() { return tailBlocks; }
     public void setTailBlocks(List<Block> tailBlocks) {
-        if(tailBlocks.get(0).getBeginNode()!=this.tailNode)
+        AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
+        if(!this.tailNodes.contains(node))
             System.out.println("ParseImportantFeaturesError: set tail blocks on wrong tail.");
 
-        this.tailBlocks = new ArrayList<>(tailBlocks);
+        int i = this.tailNodes.indexOf(node);
+        this.tailBlocks.set(i, new ArrayList<Block>(tailBlocks));
     }
 }
 
@@ -234,12 +243,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                 if (splits.size() > 0 && !splits.peek().finished()) {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
-                    if (personalMerge(splits.peek(), (AbstractMergeNode) merge.getBeginNode())) {
-                        if(splits.peek().getTailNode() != null)
-                            System.out.println("ParseImportantFeaturesError: Going through the same merge node twice.");
-                        splits.peek().setTailNode(merge.getBeginNode());
-                        return new TraversalState(); // will start from that merge block/node which was just added as a tail
-                    }
+                    splits.peek().setTailNode(merge.getBeginNode());
+                    return new TraversalState();
                 }
 
                 while (splits.size() > 0) {
@@ -269,13 +274,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             } else
                                 continue; // Son not added; all control splits are full
                         }
-                    } else if (personalMerge(splits.peek(), (AbstractMergeNode) merge.getBeginNode())) { // !splits.peek().finished()
-                        if(splits.peek().getTailNode() != null && splits.peek().getTailNode()!=merge.getBeginNode())
-                            System.out.println("ParseImportantFeaturesError: Going through the same merge node twice.");
-                        if(splits.peek().getTailNode()!=merge.getBeginNode())
-                            splits.peek().setTailNode(merge.getBeginNode());
-                        return new TraversalState(); // will start from that merge block/node which was just added as a tail
-                    } else
+                    } else // TODO: ovde nova izmena ide?
                         return new TraversalState(newPath);  // Control spit on splits top aren't finished, continue with merge node and so on.
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
@@ -356,7 +355,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         if(path==null || path.size()==0) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).getTailNode()==path.get(0).getBeginNode())
+            if (splits.get(i).areInTails(path.get(0).getBeginNode()))
                 break;
         }
         if (i == -1)
@@ -391,7 +390,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         Block head = cs.getBlock();
         List<List<Block>> sons = cs.getSons();
         int nsons = sons.size();
-        List<Block> tail = cs.getTailBlocks();
+        List<Block> tail = new ArrayList<Block>();
+        List<AbstractBeginNode> csNodes = cs.getTailNodes();
+        List<List<Block>> csBlockss = cs.getTailBlocks();
+        if(csNodes.size()!=csBlockss.size())
+            System.out.println("ParseImportantFeaturesError: wrong tail sizes.");
+        for(int i=0; i<csNodes.size(); i++){
+            AbstractBeginNode csNode = csNodes.get(i);
+            List<Block> csBlocks = csBlockss.get(i);
+            if(csBlocks==null)
+                continue;
+            if(personalMerge(cs, (AbstractMergeNode)csNode))
+                tail.addAll(csBlocks);
+            else if(splits.size()>0){
+                splits.peek().setTailNode(csNode);
+                splits.peek().setTailBlocks(csBlocks);
+            }
+        }
 
         // writeout
         synchronized (writer) {
@@ -409,7 +424,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         newPath.add(head);
         for (int i = 0; i < nsons; i++)
             newPath.addAll(sons.get(i));
-        if(tail!=null)
+        if(tail.size()>0)
             newPath.addAll(tail);
 
         return newPath;
