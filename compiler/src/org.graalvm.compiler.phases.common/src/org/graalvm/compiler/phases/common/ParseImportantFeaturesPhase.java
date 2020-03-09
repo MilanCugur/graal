@@ -274,7 +274,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             } else
                                 continue; // Son not added; all control splits are full
                         }
-                    } else // TODO: ovde nova izmena ide?
+                    } else 
                         return new TraversalState(newPath);  // Control spit on splits top aren't finished, continue with merge node and so on.
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
