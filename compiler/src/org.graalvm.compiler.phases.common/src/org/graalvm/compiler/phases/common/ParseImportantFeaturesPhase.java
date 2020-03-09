@@ -98,7 +98,7 @@ class ControlSplit {  // Representation of a control split
     public void setTailNode(AbstractBeginNode tailNode) {
         this.tailNodes.add(tailNode);
         this.tailBlocks.add(null);
-    } // TODO: can I wait more than one
+    }
     public List<AbstractBeginNode> getTailNodes(){ return tailNodes; }
     public List<List<Block>> getTailBlocks() { return tailBlocks; }
     public void setTailBlocks(List<Block> tailBlocks) {
@@ -198,8 +198,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             @Override
             protected TraversalState processBlock(Block block, TraversalState currentState) {
                 if (block.getEndNode() instanceof ControlSplitNode) {
-                    splits.push(new ControlSplit(block, currentState.getPath()));  // add control split currently being processed
-                    currentState.clearPath();                                      // clear path, fresh restart (for the first successor path to block already set)
+                    splits.push(new ControlSplit(block, currentState.getPath()));  // Add control split currently being processed (with appropriate path to block)
+                    currentState.clearPath();                                      // Clear path, fresh restart (for the first successor path to block is already set)
                 } else {
                     currentState.addBlockToPath(block);
 
@@ -282,7 +282,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             @Override
             protected TraversalState cloneState(TraversalState oldState) {
-                return new TraversalState();  // Till now only for control split purpose, when push sons, father is on the stack TODO: Vidi kako ces kod kloniranja za petlje
+                return new TraversalState();  // Only for control split purpose, when push sons, father is on the stack
             }
 
             @Override
