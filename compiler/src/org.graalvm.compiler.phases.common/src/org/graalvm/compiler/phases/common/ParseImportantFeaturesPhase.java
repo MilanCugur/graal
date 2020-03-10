@@ -54,7 +54,7 @@ class ControlSplit {
     private List<Block> pathToBlock;  // The path leading to this block
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
-    private EconomicSet<AbstractBeginNode> tailNodes;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
+    private EconomicSet<AbstractBeginNode> tailHeads;  // If I go through my personal merge and I am not complete at that time
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -62,12 +62,11 @@ class ControlSplit {
             System.out.println("ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).");
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
-        ControlSplitNode endnode = (ControlSplitNode) block.getEndNode();
         this.sonsBlocks = EconomicMap.create(Equivalence.IDENTITY);
         this.sonsHeads =  EconomicSet.create(Equivalence.IDENTITY);
         for(Block son: block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
-        this.tailNodes = EconomicSet.create(Equivalence.IDENTITY);
+        this.tailHeads = EconomicSet.create(Equivalence.IDENTITY);
         this.tailBlocks = EconomicMap.create(Equivalence.IDENTITY);
     }
 
@@ -92,11 +91,11 @@ class ControlSplit {
     }
 
     // Tails operations
-    public boolean areInTails(AbstractBeginNode node){ return this.tailNodes.contains(node); }
-    public void setTailNode(AbstractBeginNode tailNode) { this.tailNodes.add(tailNode); }
+    public boolean areInTails(AbstractBeginNode node){ return this.tailHeads.contains(node); }
+    public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }
     public void setTailBlocks(List<Block> tailBlocks) {
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
-        if(!this.tailNodes.contains(node))
+        if(!this.tailHeads.contains(node))
             System.out.println("ParseImportantFeaturesError: set tail blocks on wrong tail.");
 
         this.tailBlocks.put(node, new ArrayList<Block>(tailBlocks));
@@ -386,7 +385,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             if(personalMerge(cs, (AbstractMergeNode)csNode))
                 tail.addAll(csBlocks);
             else if(splits.size()>0){
-                splits.peek().setTailNode(csNode);
+                splits.peek().setTailNode(csNode);  // Propagate tail upwards
                 splits.peek().setTailBlocks(csBlocks);
             }
         }
