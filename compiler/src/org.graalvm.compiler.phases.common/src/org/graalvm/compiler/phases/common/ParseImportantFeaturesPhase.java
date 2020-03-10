@@ -27,6 +27,7 @@ package org.graalvm.compiler.phases.common;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
+import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.core.common.cfg.BlockMap;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.DebugContext;
@@ -49,13 +50,12 @@ import java.util.*;
 
 /* Representation of a control split */
 class ControlSplit {
-    private Block block;             // Block which is ended with control split node
-    private List<Block> pathToBlock; // The path leading to this block
-    private Integer nsons;           // Number of sons
-    private List<List<Block>> sons;  // Completed sons
+    private Block block;  // Block which is ended with control split node
+    private List<Block> pathToBlock;  // The path leading to this block
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
-    private List<AbstractBeginNode> tailNodes; // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
-    private List<List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
+    private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
+    private EconomicSet<AbstractBeginNode> tailNodes;  // If I go through my personal merge and I am not complete at that time; AbstractMergeNode -> AbstractBeginNode
+    private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
         if(!(block.getEndNode() instanceof ControlSplitNode))
@@ -63,54 +63,45 @@ class ControlSplit {
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
         ControlSplitNode endnode = (ControlSplitNode) block.getEndNode();
-        this.nsons = endnode.getSuccessorCount();
-        this.sons = new ArrayList<>(nsons);
+        this.sonsBlocks = EconomicMap.create(Equivalence.IDENTITY);
         this.sonsHeads =  EconomicSet.create(Equivalence.IDENTITY);
         for(Block son: block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
-        this.tailNodes = new ArrayList<AbstractBeginNode>();
-        this.tailBlocks = new ArrayList<List<Block>>();
-    }
-
-    public void addASon(List<Block> sonsPath){
-        if(this.sonsHeads.contains(sonsPath.get(0).getBeginNode())) {
-            this.sons.add(new ArrayList<>(sonsPath));
-            this.nsons -= 1;
-            this.sonsHeads.remove(sonsPath.get(0).getBeginNode());
-        }else
-            System.out.println("ParseImportantFeaturesError: adding invalid son.");
-    }
-
-    public Boolean finished(){
-        return this.nsons == 0;
+        this.tailNodes = EconomicSet.create(Equivalence.IDENTITY);
+        this.tailBlocks = EconomicMap.create(Equivalence.IDENTITY);
     }
 
     public Block getBlock(){ return this.block; }
 
-    public List<List<Block>> getSons() { return sons; }
-
     public List<Block> getPathToBlock() { return pathToBlock; }
 
-    public EconomicSet<AbstractBeginNode> getSonsHeads() { return sonsHeads; }
+    // Sons operations
+    public Boolean finished(){ return this.sonsBlocks.size()==this.block.getSuccessorCount(); }
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() { return this.sonsBlocks.getEntries(); }
+    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }
+    public boolean areInSons(AbstractBeginNode node){ return this.sonsHeads.contains(node); }
+    public void addASon(List<Block> sonsPath){
+        AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
+        if(this.sonsHeads.contains(sonsHead)) {
+            if(this.sonsBlocks.containsKey(sonsHead))
+                System.out.println("ParseImportantFeaturesError: Adding same son twice.");
+            this.sonsBlocks.put(sonsHead, new ArrayList<>(sonsPath));
+            this.sonsHeads.remove(sonsHead);
+        }else
+            System.out.println("ParseImportantFeaturesError: adding invalid son.");
+    }
 
-    //public AbstractBeginNode getTailNode() { return tailNode; }
-    public boolean areInTails(AbstractBeginNode node){
-        return this.tailNodes.contains(node);
-    }
-    public void setTailNode(AbstractBeginNode tailNode) {
-        this.tailNodes.add(tailNode);
-        this.tailBlocks.add(null);
-    }
-    public List<AbstractBeginNode> getTailNodes(){ return tailNodes; }
-    public List<List<Block>> getTailBlocks() { return tailBlocks; }
+    // Tails operations
+    public boolean areInTails(AbstractBeginNode node){ return this.tailNodes.contains(node); }
+    public void setTailNode(AbstractBeginNode tailNode) { this.tailNodes.add(tailNode); }
     public void setTailBlocks(List<Block> tailBlocks) {
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
         if(!this.tailNodes.contains(node))
             System.out.println("ParseImportantFeaturesError: set tail blocks on wrong tail.");
 
-        int i = this.tailNodes.indexOf(node);
-        this.tailBlocks.set(i, new ArrayList<Block>(tailBlocks));
+        this.tailBlocks.put(node, new ArrayList<Block>(tailBlocks));
     }
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); }
 }
 
 /* Graph traversal intermediate state representation */
@@ -270,7 +261,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             } else
                                 continue; // Son not added; all control splits are full
                         }
-                    } else 
+                    } else
                         return new TraversalState(newPath);  // Control spit on splits top aren't finished, continue with merge node and so on.
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
@@ -328,7 +319,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge){
         // Are merge block (block starting with AbstractMergeNode merge) fully owned by Control split cs
-        List<List<Block>> sons = cs.getSons();
+        Iterable<List<Block>> sons = cs.getSonsPaths();
         EconomicSet<AbstractEndNode> myEnds = EconomicSet.create(Equivalence.IDENTITY);
         for(List<Block> son: sons){
             for(Block sblock : son){
@@ -364,7 +355,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         if(path==null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).getSonsHeads().contains(path.get(0).getBeginNode()))
+            if (splits.get(i).areInSons(path.get(0).getBeginNode()))
                 break;
         }
         if (i == -1)
@@ -384,16 +375,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // pop finished cs
         ControlSplit cs = splits.pop();
         Block head = cs.getBlock();
-        List<List<Block>> sons = cs.getSons();
-        int nsons = sons.size();
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
         List<Block> tail = new ArrayList<Block>();
-        List<AbstractBeginNode> csNodes = cs.getTailNodes();
-        List<List<Block>> csBlockss = cs.getTailBlocks();
-        if(csNodes.size()!=csBlockss.size())
-            System.out.println("ParseImportantFeaturesError: wrong tail sizes.");
-        for(int i=0; i<csNodes.size(); i++){
-            AbstractBeginNode csNode = csNodes.get(i);
-            List<Block> csBlocks = csBlockss.get(i);
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tail = cs.getTails();
+        while(__tail.advance()){
+            AbstractBeginNode csNode = __tail.getKey();
+            List<Block> csBlocks = __tail.getValue();
             if(csBlocks==null)
                 continue;
             if(personalMerge(cs, (AbstractMergeNode)csNode))
@@ -410,16 +397,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
 
             writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
-            for (int i = 0; i < nsons; i++)
-                writer.printf(", \"%s\"", sons.get(i));
+            while(__sons.advance()) {
+                AbstractBeginNode sonHead = __sons.getKey();
+                List<Block> sonPath = __sons.getValue();
+                writer.printf(", \"%s\"", sonPath);
+            }
             writer.printf("%n");
         }
 
         // create a full cs path
         newPath = new ArrayList<>(cs.getPathToBlock());
         newPath.add(head);
-        for (int i = 0; i < nsons; i++)
-            newPath.addAll(sons.get(i));
+        __sons = cs.getSons();
+        while(__sons.advance()) {
+            AbstractBeginNode sonHead = __sons.getKey();
+            List<Block> sonPath = __sons.getValue();
+            newPath.addAll(sonPath);
+        }
         if(tail.size()>0)
             newPath.addAll(tail);
 
