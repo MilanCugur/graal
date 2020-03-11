@@ -89,6 +89,17 @@ class ControlSplit {
         }else
             System.out.println("ParseImportantFeaturesError: adding invalid son.");
     }
+    public void addALoopExitSon(AbstractBeginNode loopExitNode, List<Block> pathToLoopExit){  // pathToLoopExit its going to be null
+        if(pathToLoopExit.size()>0)
+            System.out.println(pathToLoopExit);
+        if(this.sonsHeads.contains(loopExitNode)){
+            if(this.sonsBlocks.containsKey(loopExitNode))
+                System.out.println("ParseImportantFeaturesError: Adding same son twice.");
+            this.sonsBlocks.put(loopExitNode, new ArrayList<>(pathToLoopExit));
+            this.sonsHeads.remove(loopExitNode);
+        }else
+            System.out.println("ParseImportantFeaturesError: adding invalid son.");
+    }
 
     // Tails operations
     public boolean areInTails(AbstractBeginNode node){ return this.tailHeads.contains(node); }
@@ -132,10 +143,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id, Node BCI, Node Id, Node Description, Number of blocks%n");
+            writer.printf("Graph Id, Node BCI, Node Id%n");
         } catch (FileNotFoundException e) {
-            System.out.println("Error with file opening. "); // TODO: fix this
-            e.printStackTrace();
+            System.out.println("ParseImportantFeaturesError: Can't open output file.");
         }
     }
 
@@ -183,6 +193,19 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             @Override
             protected TraversalState processBlock(Block block, TraversalState currentState) {
+                if (block.getBeginNode() instanceof LoopExitNode){
+                    ControlSplit fatherCS = findControlSplitFather(splits, block.getBeginNode()); // Break path on LoopExitNode
+                    if(fatherCS!=null) {
+                        fatherCS.addALoopExitSon(block.getBeginNode(), currentState.getPath());
+                        fatherCS.setTailNode(block.getBeginNode());  // Add appropriate tail for backpropagation
+                        currentState.clearPath();  // Empty state for path till now
+                    }
+                    //else{
+                        //ControlSplit tailCS = findTailFather(splits, currentState.getPath());
+                        //if(tailCS!=null)
+                        //    System.out.println("Greska ne ocekujem ovo! Da neko ceka loop exit node na repu!");
+                    //}
+                }
                 if (block.getEndNode() instanceof ControlSplitNode) {
                     splits.push(new ControlSplit(block, currentState.getPath()));  // Add control split currently being processed (with appropriate path to block)
                     currentState.clearPath();                                      // Clear path, fresh restart (for the first successor path to block is already set)
@@ -190,7 +213,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     currentState.addBlockToPath(block);
 
                     if (block.getSuccessors().length == 0) {  // I don't have successors: for blocks like this iterator simply go on
-                        ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath());
+                        ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath().get(0).getBeginNode());
                         if (fatherCS != null)
                             fatherCS.addASon(currentState.getPath());
                         else {  // If no one waits for me as a son, look at a theirs tails; specific need for real end of a graph (for backpropagation blocks upwards)
@@ -204,7 +227,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // End before loops aren't end of any Control Split branches: simply skip that end (in the term of adding a son)
                         // If next is loop begin node: if curr is loop end: add path as a someone son, else: skip adding path as a anyone son
                         if (block.getEndNode() instanceof AbstractEndNode && (block.isLoopEnd() || !(block.getFirstSuccessor().getBeginNode() instanceof LoopBeginNode))) {
-                            ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath());
+                            ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath().get(0).getBeginNode());
                             if (fatherCS != null)
                                 fatherCS.addASon(currentState.getPath());
                             else {  // If no one waits for me as a son, look at a theirs tails
@@ -243,7 +266,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // Try to eventually add a son
                         if (splits.size() > 0) {
                             ControlSplit fatherCS = null, tailCS = null;
-                            fatherCS = findControlSplitFather(splits, newPath);
+                            fatherCS = findControlSplitFather(splits, newPath.get(0).getBeginNode());
                             tailCS = findTailFather(splits, newPath);
                             if (fatherCS != null) {
                                 // IF IT IS MY PERSONAL MERGE CONTINUE ELSE PUSH AS A SON
@@ -304,7 +327,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             // Try to eventually add a son
             if (splits.size() > 0) {
                 ControlSplit fatherCS = null, tailCS = null;
-                fatherCS = findControlSplitFather(splits, newPath);
+                fatherCS = findControlSplitFather(splits, newPath.get(0).getBeginNode());
                 tailCS = findTailFather(splits, newPath);
                 if (fatherCS != null)
                     fatherCS.addASon(newPath);
@@ -350,11 +373,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             return splits.get(i);
     }
 
-    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, List<Block> path){
-        if(path==null) return null;
+    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, AbstractBeginNode node){
+        if(node==null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).areInSons(path.get(0).getBeginNode()))
+            if (splits.get(i).areInSons(node))
                 break;
         }
         if (i == -1)
@@ -382,7 +405,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             List<Block> csBlocks = __tail.getValue();
             if(csBlocks==null)
                 continue;
-            if(personalMerge(cs, (AbstractMergeNode)csNode))
+            if((csNode instanceof LoopExitNode) || personalMerge(cs, (AbstractMergeNode)csNode))
                 tail.addAll(csBlocks);
             else if(splits.size()>0){
                 splits.peek().setTailNode(csNode);  // Propagate tail upwards
