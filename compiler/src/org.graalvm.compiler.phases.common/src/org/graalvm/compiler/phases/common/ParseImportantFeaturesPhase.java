@@ -89,16 +89,14 @@ class ControlSplit {
         }else
             System.out.println("ParseImportantFeaturesError: adding invalid son.");
     }
-    public void addALoopExitSon(AbstractBeginNode loopExitNode, List<Block> pathToLoopExit){  // pathToLoopExit its going to be null
-        if(pathToLoopExit.size()>0)
-            System.out.println(pathToLoopExit);
+    public void addALoopExitSon(AbstractBeginNode loopExitNode, List<Block> path){  // Path can be null / ARE
         if(this.sonsHeads.contains(loopExitNode)){
             if(this.sonsBlocks.containsKey(loopExitNode))
-                System.out.println("ParseImportantFeaturesError: Adding same son twice.");
-            this.sonsBlocks.put(loopExitNode, new ArrayList<>(pathToLoopExit));
+                System.out.println("ParseImportantFeaturesError: Adding LoopExitNode son twice.");
+            this.sonsBlocks.put(loopExitNode, new ArrayList<>(path));
             this.sonsHeads.remove(loopExitNode);
         }else
-            System.out.println("ParseImportantFeaturesError: adding invalid son.");
+            System.out.println("ParseImportantFeaturesError: Adding wrong LoopExitNode son.");
     }
 
     // Tails operations
@@ -127,6 +125,9 @@ class TraversalState {
         else
             this.path = new ArrayList<>(path);
     }
+    public TraversalState(TraversalState state){
+        this.path = new ArrayList<>(state.getPath());
+    }
 
     public List<Block> getPath() { return this.path; }
 
@@ -143,9 +144,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id, Node BCI, Node Id%n");
+            writer.printf("Graph Id, Node BCI, Node Id, Node Description, Number of blocks%n");
         } catch (FileNotFoundException e) {
-            System.out.println("ParseImportantFeaturesError: Can't open output file.");
+            System.out.println("Error with file opening. "); // TODO: fix this
+            e.printStackTrace();
         }
     }
 
@@ -193,18 +195,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             @Override
             protected TraversalState processBlock(Block block, TraversalState currentState) {
-                if (block.getBeginNode() instanceof LoopExitNode){
-                    ControlSplit fatherCS = findControlSplitFather(splits, block.getBeginNode()); // Break path on LoopExitNode
+                if(block.getBeginNode() instanceof LoopExitNode){  // If I am entered with new block starting with loop exit node - close appropriate son, and simply go on
+                    ControlSplit fatherCS = findControlSplitFather(splits, block.getBeginNode());
                     if(fatherCS!=null) {
-                        fatherCS.addALoopExitSon(block.getBeginNode(), currentState.getPath());
+                        fatherCS.addALoopExitSon(block.getBeginNode(), currentState.getPath());  // Break son on LoopExitNode
                         fatherCS.setTailNode(block.getBeginNode());  // Add appropriate tail for backpropagation
                         currentState.clearPath();  // Empty state for path till now
                     }
-                    //else{
-                        //ControlSplit tailCS = findTailFather(splits, currentState.getPath());
-                        //if(tailCS!=null)
-                        //    System.out.println("Greska ne ocekujem ovo! Da neko ceka loop exit node na repu!");
-                    //}
                 }
                 if (block.getEndNode() instanceof ControlSplitNode) {
                     splits.push(new ControlSplit(block, currentState.getPath()));  // Add control split currently being processed (with appropriate path to block)
@@ -310,7 +307,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     assert blockEndStates.containsKey(loopExit.getBeginNode()) : loopExit.getBeginNode() + " " + blockEndStates;
                     TraversalState exitState = blockEndStates.get(loopExit.getBeginNode());
                     // make sure all exit states are unique objects
-                    info.exitStates.add(exitState);  // this.cloneState(exitState) for unfinished sons error - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
+                    info.exitStates.add(new TraversalState(exitState));  // this.cloneState(exitState) for unfinished sons error - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
                 }
                 return info.exitStates;
             }
@@ -403,9 +400,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         while(__tail.advance()){
             AbstractBeginNode csNode = __tail.getKey();
             List<Block> csBlocks = __tail.getValue();
-            if(csBlocks==null)
-                continue;
-            if((csNode instanceof LoopExitNode) || personalMerge(cs, (AbstractMergeNode)csNode))
+            if((csNode instanceof LoopExitNode) || personalMerge(cs, (AbstractMergeNode)csNode))  // Handle LoopExitNodes as personal ones
                 tail.addAll(csBlocks);
             else if(splits.size()>0){
                 splits.peek().setTailNode(csNode);  // Propagate tail upwards
