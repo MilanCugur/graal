@@ -1084,6 +1084,7 @@ mx_sdk_vm.register_graalvm_component(mx_sdk_vm.GraalVmJreComponent(
                 'substratevm:SVM_AGENT',
             ],
             build_args=[
+                '-J-ea'
             ],
         ),
     ],

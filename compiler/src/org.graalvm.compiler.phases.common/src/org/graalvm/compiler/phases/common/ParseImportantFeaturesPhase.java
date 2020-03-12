@@ -58,8 +58,7 @@ class ControlSplit {
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
-        if(!(block.getEndNode() instanceof ControlSplitNode))
-            System.out.println("ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).");
+        assert block.getEndNode() instanceof ControlSplitNode : "ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).";
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
         this.sonsBlocks = EconomicMap.create(Equivalence.IDENTITY);
@@ -81,13 +80,10 @@ class ControlSplit {
     public boolean areInSons(AbstractBeginNode node){ return this.sonsHeads.contains(node); }
     public void addASon(List<Block> sonsPath){
         AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
-        if(this.sonsHeads.contains(sonsHead)) {
-            if(this.sonsBlocks.containsKey(sonsHead))
-                System.out.println("ParseImportantFeaturesError: Adding same son twice.");
-            this.sonsBlocks.put(sonsHead, new ArrayList<>(sonsPath));
-            this.sonsHeads.remove(sonsHead);
-        }else
-            System.out.println("ParseImportantFeaturesError: adding invalid son.");
+        assert this.sonsHeads.contains(sonsHead) : "ParseImportantFeaturesError: Adding invalid son.";
+        assert !this.sonsBlocks.containsKey(sonsHead) : "ParseImportantFeaturesError: Adding same son twice.";
+        this.sonsBlocks.put(sonsHead, new ArrayList<>(sonsPath));
+        this.sonsHeads.remove(sonsHead);
     }
 
     // Tails operations
@@ -95,9 +91,7 @@ class ControlSplit {
     public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }
     public void setTailBlocks(List<Block> tailBlocks) {
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
-        if(!this.tailHeads.contains(node))
-            System.out.println("ParseImportantFeaturesError: set tail blocks on wrong tail.");
-
+        assert this.tailHeads.contains(node) : "ParseImportantFeaturesError: set tail blocks on wrong tail.";
         this.tailBlocks.put(node, new ArrayList<Block>(tailBlocks));
     }
     public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); }
@@ -134,7 +128,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
             writer.printf("Graph Id, Node BCI, Node Id, Node Description%n");
         } catch (FileNotFoundException e) {
-            System.out.println("ParseImportantFeaturesError: Can't open a database file.");
+            System.exit(1);  // Can't open a database file.
         }
     }
 
@@ -364,10 +358,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph){
         // Pop element from the top of a stack and write it out to database; return integrated path
-        if(splits.size()==0 || !splits.peek().finished()){
-            System.out.println("ParseImportantFeaturesError: invalid call of 'writeOutFromStack'");
-            return new ArrayList<Block>();
-        }
+        assert splits.size()>0 && splits.peek().finished() :  "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
         List<Block> newPath = null;
 
         // pop finished cs
