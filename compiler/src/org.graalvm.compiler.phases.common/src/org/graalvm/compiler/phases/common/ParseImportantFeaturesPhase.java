@@ -132,10 +132,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id, Node BCI, Node Id, Node Description, Number of blocks%n");
+            writer.printf("Graph Id, Node BCI, Node Id, Node Description%n");
         } catch (FileNotFoundException e) {
-            System.out.println("Error with file opening. "); // TODO: fix this
-            e.printStackTrace();
+            System.out.println("ParseImportantFeaturesError: Can't open a database file.");
         }
     }
 
@@ -189,28 +188,28 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 } else {
                     currentState.addBlockToPath(block);
 
-                    if (block.getSuccessors().length == 0) {  // I don't have successors: for blocks like this iterator simply go on
-                        ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath());
-                        if (fatherCS != null)
-                            fatherCS.addASon(currentState.getPath());
-                        else {  // If no one waits for me as a son, look at a theirs tails; specific need for real end of a graph (for backpropagation blocks upwards)
-                            fatherCS = findTailFather(splits, currentState.getPath());
-                            if (fatherCS != null)
-                                fatherCS.setTailBlocks(currentState.getPath());
+                    if (block.getSuccessors().length == 0) {  // I don't have successors: for blocks like this ReentrantBlockIterator simply go on
+                        ControlSplit targetCS = findControlSplitFather(splits, currentState.getPath());
+                        if (targetCS != null)
+                            targetCS.addASon(currentState.getPath());
+                        else {  // If no one waits for me as a son, look at a their tails
+                            targetCS = findTailFather(splits, currentState.getPath());
+                            if (targetCS != null)
+                                targetCS.setTailBlocks(currentState.getPath());
                         }
                         // else - no one to catch
                         // currentState path will be reset on ReentrantBlockIterator.java, @ line 170.
                     } else if (block.getSuccessors().length == 1) {  // I have only one successor
-                        // End before loops aren't end of any Control Split branches: simply skip that end (in the term of adding a son)
-                        // If next is loop begin node: if curr is loop end: add path as a someone son, else: skip adding path as a anyone son
+                        // End before loops aren't end of any Control Split branches: simply skip that end (in the term of adding a son/tail)
+                        // If next is LoopBeginNode: if curr is loop end: add path as a someone son/tail, else: skip adding path as a anyone son/tail
                         if (block.getEndNode() instanceof AbstractEndNode && (block.isLoopEnd() || !(block.getFirstSuccessor().getBeginNode() instanceof LoopBeginNode))) {
-                            ControlSplit fatherCS = findControlSplitFather(splits, currentState.getPath());
-                            if (fatherCS != null)
-                                fatherCS.addASon(currentState.getPath());
+                            ControlSplit targetCS = findControlSplitFather(splits, currentState.getPath());
+                            if (targetCS != null)
+                                targetCS.addASon(currentState.getPath());
                             else {  // If no one waits for me as a son, look at a theirs tails
-                                fatherCS = findTailFather(splits, currentState.getPath());
-                                if (fatherCS != null)
-                                    fatherCS.setTailBlocks(currentState.getPath());
+                                targetCS = findTailFather(splits, currentState.getPath());
+                                if (targetCS != null)
+                                    targetCS.setTailBlocks(currentState.getPath());
                             }
                             // else - no one to catch
                             // currentState path will be reset on ReentrantBlockIterator.java, @ line 170.
@@ -219,23 +218,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         assert false : "Node with more than one successors doesn't catch as a Control Split Node.";
                     }
                 }
-                return currentState;  // This will be used only on Fixed With Next Node process
+                return currentState;  // This will be used only on FixedWithNextNode process
             }
 
             @Override
-            protected TraversalState merge(Block merge, List<TraversalState> __states) { // Vrati poslednje sto je spojio a nije nalepio, inace <>
+            protected TraversalState merge(Block merge, List<TraversalState> __states) {
                 // ___states are used internally by ReentrantBlockIterator in order to ensure that the graph is properly visited
                 List<Block> newPath = null;
 
                 if (splits.size() > 0 && !splits.peek().finished()) {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
-                    splits.peek().setTailNode(merge.getBeginNode());
-                    return new TraversalState();
+                    splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
+                    return new TraversalState();  // Clear path
                 }
 
                 while (splits.size() > 0) {
                     if (splits.peek().finished()) {
-                        // I (on top of the stack)
+                        // Finished ControlSplit (on top of the stack)
                         ControlSplit stacksTop = splits.peek();
                         // My new path
                         newPath = writeOutFromStack(splits, graph);
@@ -246,34 +245,34 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             fatherCS = findControlSplitFather(splits, newPath);
                             tailCS = findTailFather(splits, newPath);
                             if (fatherCS != null) {
-                                // IF IT IS MY PERSONAL MERGE CONTINUE ELSE PUSH AS A SON
+                                // If tis my personal merge continue, else push as a son
                                 if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode()))
                                     return new TraversalState(newPath);
                                 else
                                     fatherCS.addASon(newPath);
                             } else if (tailCS != null) {
-                                // JUST ADD TO APPROPRIATE TAIL
-                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode()))  // newly added
-                                    return new TraversalState(newPath);  // newly added
-                                else  // newly added
+                                // If its my personal merge continue, else push as a tail
+                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode()))
+                                    return new TraversalState(newPath);
+                                else
                                     tailCS.setTailBlocks(newPath);
                             } else
-                                continue; // Son not added; all control splits are full
+                                continue; // Son not added; No one waiting for me
                         }
                     } else
-                        return new TraversalState(newPath);  // Control spit on splits top aren't finished, continue with merge node and so on.
+                        return new TraversalState(newPath);  // Control spit on splits top aren't finished (it was on beginning) continue with unrolled path
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
             }
 
             @Override
             protected TraversalState cloneState(TraversalState oldState) {
-                return new TraversalState();  // Only for control split purpose, when push sons, father is on the stack
+                return new TraversalState();  // @ReentrantBlockIterator processMultipleSuccessors: used only for control split purpose, when pushing sons, father has been already on top of the stack, waiting for them
             }
 
             @Override
             protected List<TraversalState> processLoop(Loop<Block> loop, TraversalState initialState) {
-                EconomicMap<FixedNode, TraversalState> blockEndStates = ReentrantBlockIterator.apply(this, loop.getHeader(), initialState, block -> !(block.getLoop() == loop || block.isLoopHeader()));
+                EconomicMap<FixedNode, TraversalState> blockEndStates = ReentrantBlockIterator.apply(this, loop.getHeader(), initialState, block -> !(block.getLoop() == loop || block.isLoopHeader()));  // Recursive call, stopping on the LoopExitNodes
 
                 Block[] predecessors = loop.getHeader().getPredecessors();
                 ReentrantBlockIterator.LoopInfo<TraversalState> info = new ReentrantBlockIterator.LoopInfo<>(predecessors.length - 1, loop.getLoopExits().size());
@@ -282,12 +281,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     // make sure all end states are unique objects
                     info.endStates.add(this.cloneState(endState));
                 }
-                for (Block loopExit : loop.getLoopExits()) { // getLoopExits()
+                for (Block loopExit : loop.getLoopExits()) {
                     assert loopExit.getPredecessorCount() == 1;
                     assert blockEndStates.containsKey(loopExit.getBeginNode()) : loopExit.getBeginNode() + " " + blockEndStates;
                     TraversalState exitState = blockEndStates.get(loopExit.getBeginNode());
                     // make sure all exit states are unique objects
-                    info.exitStates.add(exitState);  // this.cloneState(exitState) for unfinished sons error - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
+                    info.exitStates.add(exitState);  // Need to propagate full path to the loop exit - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
                 }
                 return info.exitStates;
             }
@@ -311,7 +310,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 else if (tailCS != null)
                     tailCS.setTailBlocks(newPath);
                 else
-                    continue; // Son not added; no one waiting for this path as a son; continue flushing splits
+                    continue; // A son not added; no one waiting for this path as a son; continue to flushing splits
             }
         }
     }
@@ -322,7 +321,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         EconomicSet<AbstractEndNode> myEnds = EconomicSet.create(Equivalence.IDENTITY);
         for(List<Block> son: sons){
             for(Block sblock : son){
-                if(sblock.getEndNode() instanceof AbstractEndNode){  // For merge of 2nd order (B30 @CompleteExample) - imagine more stacked [node 47|If also covered with this rule]
+                if(sblock.getEndNode() instanceof AbstractEndNode){  // For merge of 2nd and higher order
                     myEnds.add((AbstractEndNode)sblock.getEndNode());
                 }
             }
@@ -338,7 +337,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path){
-        if(path==null || path.size()==0) return null;
+        if(path==null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
             if (splits.get(i).areInTails(path.get(0).getBeginNode()))
@@ -398,7 +397,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
                 if(sonHead instanceof LoopExitNode)
-                    writer.printf(", len");  // len is an abbreviation for LoopExitNode
+                    writer.printf(", x");  // x is an abbreviation for LoopExitNode
                 else
                     writer.printf(", \"%s\"", sonPath);
             }
