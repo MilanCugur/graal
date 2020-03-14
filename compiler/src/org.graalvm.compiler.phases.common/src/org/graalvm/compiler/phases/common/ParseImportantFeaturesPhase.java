@@ -291,8 +291,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Flush [finished] Control Splits from the stack as the end of the iteration process
         while (splits.size() > 0) {
             // My new path
-            List<Block> newPath = null;
-            newPath = writeOutFromStack(splits, graph);
+            List<Block> newPath = writeOutFromStack(splits, graph);
 
             // Try to eventually add a son
             if (splits.size() > 0) {
