@@ -254,7 +254,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                 continue; // Son not added; No one waiting for me
                         }
                     } else
-                        return new TraversalState(newPath);  // Control spit on splits top aren't finished (it was on beginning) continue with unrolled path
+                        return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path (and no current wait), later on, when finish that Control Split, just do regularly
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
             }
