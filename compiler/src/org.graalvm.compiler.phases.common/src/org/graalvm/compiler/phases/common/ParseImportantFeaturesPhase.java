@@ -28,6 +28,7 @@ import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
+import org.graalvm.compiler.bytecode.ResolvedJavaMethodBytecode;
 import org.graalvm.compiler.core.common.cfg.BlockMap;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.DebugContext;
@@ -47,6 +48,8 @@ import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 /* Representation of a control split */
 class ControlSplit {
@@ -151,6 +154,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders context) {
+        // Method filter
+        ResolvedJavaMethod orign = graph.method();
+        String name = orign.getName();
+        if(!name.equals("example"))
+            return;
+
         // Block and nodes integration
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
         BlockMap<List<Node>> blockToNode = null;
@@ -218,8 +227,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             @Override
             protected TraversalState merge(Block merge, List<TraversalState> __states) {
                 // ___states are used internally by ReentrantBlockIterator in order to ensure that the graph is properly visited
-                List<Block> newPath = null;
-
                 if (splits.size() > 0 && !splits.peek().finished()) {
                     // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
                     splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
@@ -231,7 +238,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // Finished ControlSplit (on top of the stack)
                         ControlSplit stacksTop = splits.peek();
                         // My new path
-                        newPath = writeOutFromStack(splits, graph);
+                        List<Block> newPath = writeOutFromStack(splits, graph);
 
                         // Try to eventually add a son
                         if (splits.size() > 0) {
@@ -381,8 +388,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         synchronized (writer) {
             long graphId = graph.graphId();
             int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
-
-            writer.printf("%d, %d (%s), %d, \"%s\"", graphId, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
+            ResolvedJavaMethod orign = graph.method();
+            String name = orign.getName();
+            
+            writer.printf("%d, \"%s\", %d (%s), %d, \"%s\"", graphId, name, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
             while(__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();

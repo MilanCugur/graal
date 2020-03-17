@@ -463,6 +463,7 @@ class GraalTags:
     benchmarktest = ['benchmarktest', 'fulltest']
     ctw = ['ctw', 'fulltest']
     doc = ['javadoc']
+    features = ['features']   # newly added for ParseImportantFeaturesPhase testing
 
 def _remove_empty_entries(a):
     """Removes empty entries. Return value is always a list."""
@@ -589,6 +590,10 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     with Task('Javadoc', tasks, tags=GraalTags.doc) as t:
         # metadata package was deprecated, exclude it
         if t: mx.javadoc(['--exclude-packages', 'com.oracle.truffle.dsl.processor.java'], quietForNoPackages=True)
+
+    # ParseImportantFeaturesPhase tests
+    with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
+        if t: print("RUN PARSE IMPORTANT FEATURES PHASE TEST - ONLY FILL MY BODY")
 
 
 def compiler_gate_benchmark_runner(tasks, extraVMarguments=None, prefix=''):
