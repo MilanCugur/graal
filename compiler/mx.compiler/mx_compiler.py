@@ -593,7 +593,10 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
 
     # ParseImportantFeaturesPhase tests
     with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
-        if t: print("RUN PARSE IMPORTANT FEATURES PHASE TEST - ONLY FILL MY BODY")
+        if t:
+            print("STARTED TESTING OF BLOCK PARSING PHASE.")
+            mx.run(['ls', '-lt'])
+            print("FINISHED TESTING OF BLOCK PARSING PHASE.")
 
 
 def compiler_gate_benchmark_runner(tasks, extraVMarguments=None, prefix=''):

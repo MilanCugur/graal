@@ -123,20 +123,22 @@ class TraversalState {
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private Stage stage;
+    private String methodName;
 
     private static PrintWriter writer;
 
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id, Node BCI, Node Id, Node Description%n");
+            writer.printf("Graph Id, Source Function, Node BCI, Node Id, Node Description%n");
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
     }
 
-    public ParseImportantFeaturesPhase(Stage stage) {
+    public ParseImportantFeaturesPhase(Stage stage, String methodName) {
         this.stage = stage;
+        this.methodName = methodName;
     }
 
     public enum Stage {
@@ -157,7 +159,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Method filter
         ResolvedJavaMethod orign = graph.method();
         String name = orign.getName();
-        if(!name.equals("example"))
+        if(methodName!=null && !name.equals(this.methodName))  // if methodName is null (MethodFilter not specified), parse all
             return;
 
         // Block and nodes integration
