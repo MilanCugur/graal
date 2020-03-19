@@ -28,10 +28,10 @@ import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
-import org.graalvm.compiler.bytecode.ResolvedJavaMethodBytecode;
 import org.graalvm.compiler.core.common.cfg.BlockMap;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeMap;
 import org.graalvm.compiler.nodes.*;
@@ -123,7 +123,7 @@ class TraversalState {
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private Stage stage;
-    private String methodName;
+    private String methodRegex;
 
     private static PrintWriter writer;
 
@@ -136,9 +136,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
     }
 
-    public ParseImportantFeaturesPhase(Stage stage, String methodName) {
+    public ParseImportantFeaturesPhase(Stage stage, String methodRegex) {
         this.stage = stage;
-        this.methodName = methodName;
+        this.methodRegex = methodRegex;
     }
 
     public enum Stage {
@@ -158,9 +158,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     protected void run(StructuredGraph graph, CoreProviders context) {
         // Method filter
         ResolvedJavaMethod orign = graph.method();
-        String name = orign.getName();
-        if(methodName!=null && !name.equals(this.methodName))  // if methodName is null (MethodFilter not specified), parse all
-            return;
+//        String name = orign.getName();
+//        if(methodRegex!=null && !name.equals(this.methodRegex))
+//            return;
+        if(methodRegex!=null) {  // if methodRegex is null (MethodFilter not specified), parse all
+            MethodFilter mf = MethodFilter.parse(methodRegex);
+            if (!mf.matches(orign))
+                return;
+        }
 
         // Block and nodes integration
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
