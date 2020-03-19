@@ -130,7 +130,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id, Source Function, Node BCI, Node Id, Node Description%n");
+            writer.printf("Graph Id,Source Function,Node Description,Node Id,Node BCI,head%n");
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
@@ -394,18 +394,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // writeout
         synchronized (writer) {
             long graphId = graph.graphId();
-            int nodeId = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
+            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
             ResolvedJavaMethod orign = graph.method();
             String name = orign.getName();
-            
-            writer.printf("%d, \"%s\", %d (%s), %d, \"%s\"", graphId, name, nodeId, head, ((Node) head.getEndNode()).getId(), ((Node) head.getEndNode()).toString());
+
+            writer.printf("%d,\"%s\",%s,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), ((Node) head.getEndNode()).getId(), nodeBCI, head);
             while(__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
                 if(sonHead instanceof LoopExitNode)
-                    writer.printf(", x");  // x is an abbreviation for LoopExitNode
+                    writer.printf(",x");  // x is an abbreviation for LoopExitNode
                 else
-                    writer.printf(", \"%s\"", sonPath);
+                    writer.printf(",\"%s\"", sonPath);
             }
             writer.printf("%n");
         }

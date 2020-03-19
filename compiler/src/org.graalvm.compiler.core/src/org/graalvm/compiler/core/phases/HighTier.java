@@ -32,8 +32,6 @@ import static org.graalvm.compiler.core.common.GraalOptions.OptReadElimination;
 import static org.graalvm.compiler.core.common.GraalOptions.PartialEscapeAnalysis;
 import static org.graalvm.compiler.phases.common.DeadCodeEliminationPhase.Optionality.Optional;
 
-import org.graalvm.compiler.core.common.GraalOptions;
-import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.loop.DefaultLoopPolicies;
 import org.graalvm.compiler.loop.LoopPolicies;
 import org.graalvm.compiler.loop.phases.ConvertDeoptimizeToGuardPhase;
@@ -48,7 +46,6 @@ import org.graalvm.compiler.phases.common.inlining.policy.GreedyInliningPolicy;
 import org.graalvm.compiler.phases.tiers.HighTierContext;
 import org.graalvm.compiler.virtual.phases.ea.EarlyReadEliminationPhase;
 import org.graalvm.compiler.virtual.phases.ea.PartialEscapePhase;
-import org.graalvm.nativeimage.hosted.Feature;
 
 public class HighTier extends BaseTier<HighTierContext> {
 
@@ -63,8 +60,8 @@ public class HighTier extends BaseTier<HighTierContext> {
     public HighTier(OptionValues options) {
         /* Added "ParseImportantFeaturesPhase here - move it before the canonicalizer phase */
         if(ParseImportantFeaturesPhase.Options.ParseImportantFeatures.getValue(options)) {
-            String methodName = org.graalvm.compiler.debug.DebugOptions.MethodFilter.getValue(options);  // If Method Filter is specified, parse target method name
-            appendPhase(new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT, methodName));
+            String methodRegex = org.graalvm.compiler.debug.DebugOptions.MethodFilter.getValue(options);  // If Method Filter is specified, parse target method name
+            appendPhase(new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT, methodRegex));
             }
 
         CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);

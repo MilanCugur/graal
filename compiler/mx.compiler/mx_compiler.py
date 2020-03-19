@@ -537,7 +537,7 @@ def jvmci_ci_version_gate_runner(tasks):
     with Task('JVMCI_CI_VersionSyncCheck', tasks, tags=[mx_gate.Tags.style]) as t:
         if t: verify_jvmci_ci_versions([])
 
-def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVMarguments=None):
+def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVMarguments=None, features_dir=None):
     if jdk.javaCompliance >= '9':
         with Task('JDK_java_base_test', tasks, tags=['javabasetest']) as t:
             if t: java_base_unittest(_remove_empty_entries(extraVMarguments) + [])
@@ -595,7 +595,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
         if t:
             print("STARTED TESTING OF BLOCK PARSING PHASE.")
-            mx.run(['ls', '-lt'])
+            print('DIR FROM INPUT: ', features_dir)
             print("FINISHED TESTING OF BLOCK PARSING PHASE.")
 
 
@@ -731,7 +731,7 @@ def _is_jaotc_supported():
     return exists(jdk.exe_path('jaotc'))
 
 def _graal_gate_runner(args, tasks):
-    compiler_gate_runner(['compiler', 'truffle'], graal_unit_test_runs, graal_bootstrap_tests, tasks, args.extra_vm_argument)
+    compiler_gate_runner(['compiler', 'truffle'], graal_unit_test_runs, graal_bootstrap_tests, tasks, args.extra_vm_argument, args.features_dir)
     compiler_gate_benchmark_runner(tasks, args.extra_vm_argument)
     jvmci_ci_version_gate_runner(tasks)
     if _is_jaotc_supported():
