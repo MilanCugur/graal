@@ -40,6 +40,8 @@ import shutil
 import sys
 import hashlib
 import io
+import csv
+import json
 
 import mx_truffle
 import mx_sdk_vm
@@ -537,6 +539,69 @@ def jvmci_ci_version_gate_runner(tasks):
     with Task('JVMCI_CI_VersionSyncCheck', tasks, tags=[mx_gate.Tags.style]) as t:
         if t: verify_jvmci_ci_versions([])
 
+def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False):
+    """
+    Compare groundTruthData with the parsedData.
+    Return True/False as general test results. Detailed information is written to resultData.
+    """
+    assert groundTruthData.endswith(".json")
+    assert parsedData.endswith(".csv")
+    assert resultData.endswith(".csv")
+
+    check_source = None  # Ground truth source function
+    check_data = {}      # Ground truth data: (head, nodeId, nodeType) -> sons
+
+    with open(groundTruthData) as f:
+        data = json.load(f)
+
+        check_source = data['source']  # Source Function name
+        if verbose:
+            print('Validating function {}.'.format(check_source))
+        for cs in data['control splits']: # Go through its Control Splits
+            node = cs['node']
+            node = re.split("\|", node)
+            assert len(node)==2
+            nodeId = node[0]
+            nodeType = node[1]
+            head = cs['head']
+            sons = set()
+            sonsPattern = re.compile("^\s+|\s*,\s*|\s+$")
+            for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
+                sons.add(frozenset(sonsPattern.split(son)))
+                check_data[(head, nodeId, nodeType)]=sons
+
+    valid = True  # Assume that Source Function blocks are valid parsed
+    with open(parsedData, mode='r') as csv_read, open(resultData, mode='w') as csv_write:
+        csv_reader = csv.DictReader(csv_read)
+        csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'Node BCI', 'head', 'Valid Control Split'])
+        csv_writer.writeheader()
+
+        for elem in csv_reader:  # Go through input .csv file (Control Splits information)
+            _id = elem['Graph Id']
+            _source = elem['Source Function']
+            _head = elem['head']
+            _nodeId = elem['Node Id']
+            _nodeType = re.split("\|", elem['Node Description'])[1]
+            _nodeBCI = elem['Node BCI']
+            if verbose:
+                print('Validating Control Split: {:7s} {:7s} {:30s}:'.format(_id, _head, str(nodeId)+"|"+_nodeType), end='')
+
+            orign = check_data[(_head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+
+            csValid = True # Assume that current Control Split blocks are valid parsed
+            for cs in elem[None]:
+                son = frozenset(map(lambda x: x.strip(), cs[1:-1].split(",")))  # Appropriate parsed blocks
+                branchValid = son in orign  # Compare sets
+                if not branchValid:
+                    csValid = False
+            csv_writer.writerow({'Graph Id':_id, 'Source Function':_source, 'Node Description':str(nodeId)+"|"+_nodeType, 'Node Id':_nodeId, 'Node BCI':_nodeBCI, 'head':_head, 'Valid Control Split':csValid})
+            if not csValid:
+                valid = False
+            if verbose:
+                print(csValid)
+    return valid
+
+
 def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVMarguments=None, features_dir=None):
     if jdk.javaCompliance >= '9':
         with Task('JDK_java_base_test', tasks, tags=['javabasetest']) as t:
@@ -595,7 +660,23 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
         if t:
             print("STARTED TESTING OF BLOCK PARSING PHASE.")
-            print('DIR FROM INPUT: ', features_dir)
+            if os.path.isdir(features_dir):  # mx.ensure_dir_exists('MakeGraalJDK-ws') mogu i to
+                os.chdir(features_dir)
+                name = 'utest1'
+
+                mx.run(['javac', name+'.java'])
+
+                mx.run(['native-image', name, '-H:+TrackNodeSourcePosition', '-H:MethodFilter=example_'+name])
+
+                if _gate_function_check(name+'.json', 'importantFeatures.csv', 'importantResults.csv', True):
+                    print("SUCCESSFULY PASSED PARSE IMPORTANT FEATURES BLOCKS.")
+                else:
+                    print("PARSE IMPORTANT FEATURES TEST FAILED.")
+
+                # del temporary
+
+            else:
+                print('Passed directory "--features_dir {}" not valid.'.format(features_dir))
             print("FINISHED TESTING OF BLOCK PARSING PHASE.")
 
 
