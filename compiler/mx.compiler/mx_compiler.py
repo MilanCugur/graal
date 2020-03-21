@@ -553,7 +553,8 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
 
     with open(groundTruthData) as f:
         funcdata = json.load(f)  # list of functions ground truth ("source" and "control splits" fields)
-
+        if isinstance(funcdata, dict):  # fix only one func
+            funcdata = [funcdata]
         for data in funcdata:
             check_source = data['source']  # Source Function name
             if verbose:
@@ -606,6 +607,12 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
                 valid = False
             if verbose:
                 print(csValid)
+            
+        if valid:
+            csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'True'})
+        else:
+            csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'False'})
+
     return valid
 
 
@@ -673,23 +680,39 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                 os.chdir(features_dir)
                 mx.log("Directory succesfully changed to {}.".format(features_dir))
 
-                filename = 'jointest'
-                funcnames = ['example_ftest1', 'example_ftest2']
-
-                mx.log('Compiling {}.java to bytecode.'.format(filename))
-                mx.run(['javac', filename+'.java'])
-
-                mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
-                mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
-
-                if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
-                    print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
+                content = os.listdir('.')
+                candidates = map(lambda x: x.split('.')[0], filter(lambda x: x.endswith('.java'), content))
+                filenames = [candidate for candidate in candidates if candidate+'.json' in content]
+                if len(filenames)!=1:
+                    mx.log_error('In passed file {} must be only one .java source with ground truth .jason file.'.format(features_dir))
                 else:
-                    mx.log_error("Parse Important Features Tests Failed.\n")
-                mx.log(msg="Detailed informations can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
+                    filename = filenames[0]
+                    print('Testing file {}.java..'.format(filename))
+                    if 'README.md' in content:
+                        with open('./README.md', 'r') as r:
+                            mx.log(r.read())
+                    funcnames = None
+                    with open(filename+'.json', 'r') as f:
+                        css = json.load(f)
+                        if isinstance(css, dict):  # case of only one function in file
+                            css = [css]
+                        funcnames = [str(cs['source']) for cs in css]
+                    print('Testing functions: {}..'.format(str(funcnames)))
+                    mx.log('Compiling {}.java to bytecode.'.format(filename))
+                    mx.run(['javac', filename+'.java'])
 
-                mx.log('Cleaning current directory.')
-                mx.run(['rm', filename+'.class', filename])
+                    mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
+                    mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
+
+                    mx.log('Compare generated results with the ground truth..')
+                    if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
+                        print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
+                    else:
+                        mx.log_error("Parse Important Features Tests Failed.\n")
+                    mx.log(msg="Detailed information can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
+
+                    mx.log('Cleaning the current directory.')
+                    mx.run(['rm', filename+'.class', filename])
             else:
                 mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
 
