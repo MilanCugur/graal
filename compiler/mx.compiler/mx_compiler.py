@@ -549,27 +549,29 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
     assert resultData.endswith(".csv")
 
     check_source = None  # Ground truth source function
-    check_data = {}      # Ground truth data: (head, nodeId, nodeType) -> sons
+    check_data = {}      # Ground truth data: (check_source, head, nodeId, nodeType) -> sons
 
     with open(groundTruthData) as f:
-        data = json.load(f)
+        funcdata = json.load(f)  # list of functions ground truth ("source" and "control splits" fields)
 
-        check_source = data['source']  # Source Function name
-        if verbose:
-            print('Validating function {}.'.format(check_source))
-        for cs in data['control splits']: # Go through its Control Splits
-            node = cs['node']
-            node = re.split("\|", node)
-            assert len(node)==2
-            nodeId = node[0]
-            nodeType = node[1]
-            head = cs['head']
-            sons = set()
-            sonsPattern = re.compile("^\s+|\s*,\s*|\s+$")
-            for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
-                sons.add(frozenset(sonsPattern.split(son)))
-                check_data[(head, nodeId, nodeType)]=sons
-
+        for data in funcdata:
+            check_source = data['source']  # Source Function name
+            if verbose:
+                print('Validating function {}.'.format(check_source))
+            for cs in data['control splits']: # Go through its Control Splits
+                node = cs['node']
+                node = re.split("\|", node)
+                assert len(node)==2
+                nodeId = node[0]
+                nodeType = node[1]
+                head = cs['head']
+                sons = set()
+                sonsPattern = re.compile("^\s+|\s*,\s*|\s+$")
+                for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
+                    sons.add(frozenset(sonsPattern.split(son)))
+                check_data[(check_source, head, nodeId, nodeType)]=sons
+    for elem in check_data:
+        print(elem)
     valid = True  # Assume that Source Function blocks are valid parsed
     with open(parsedData, mode='r') as csv_read, open(resultData, mode='w') as csv_write:
         csv_reader = csv.DictReader(csv_read)
@@ -584,9 +586,14 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
             _nodeType = re.split("\|", elem['Node Description'])[1]
             _nodeBCI = elem['Node BCI']
             if verbose:
-                print('Validating Control Split: {:7s} {:7s} {:30s}:'.format(_id, _head, str(nodeId)+"|"+_nodeType), end='')
+                print('Validating Control Split: {:7s} {:7s} {:7s} {:30s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
 
-            orign = check_data[(_head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+            orign = None
+            if (_source, _head, _nodeId, _nodeType) in check_data:
+                orign = check_data[(_source, _head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+            else:
+                mx.log_error('\nParse Important Features Phase gate check error: Control Split {} not matched with the ground truth {} file.'.format((_source, _head, _nodeId, _nodeType), groundTruthData))
+                return False
 
             csValid = True # Assume that current Control Split blocks are valid parsed
             for cs in elem[None]:
@@ -659,25 +666,33 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     # ParseImportantFeaturesPhase tests
     with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
         if t:
-            print("STARTED TESTING OF BLOCK PARSING PHASE.")
+            mx.log("Starting of testing Parsing Important Features Phase.")
+            mx.warn("Ensure you have correct version of \"native-image\" tool built.")
+            mx.log("Changing the working directory.")
             if os.path.isdir(features_dir):  # mx.ensure_dir_exists('MakeGraalJDK-ws') mogu i to
                 os.chdir(features_dir)
-                name = 'utest1'
+                mx.log("Directory succesfully changed to {}.".format(features_dir))
 
-                mx.run(['javac', name+'.java'])
+                filename = 'jointest'
+                funcnames = ['example_ftest1', 'example_ftest2']
 
-                mx.run(['native-image', name, '-H:+TrackNodeSourcePosition', '-H:MethodFilter=example_'+name])
+                mx.log('Compiling {}.java to bytecode.'.format(filename))
+                mx.run(['javac', filename+'.java'])
 
-                if _gate_function_check(name+'.json', 'importantFeatures.csv', 'importantResults.csv', True):
-                    print("SUCCESSFULY PASSED PARSE IMPORTANT FEATURES BLOCKS.")
+                mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
+                mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
+
+                if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
+                    print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
                 else:
-                    print("PARSE IMPORTANT FEATURES TEST FAILED.")
+                    mx.log_error("Parse Important Features Tests Failed.\n")
+                mx.log(msg="Detailed informations can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
 
-                # del temporary
-
+                mx.log('Cleaning current directory.')
+                mx.run(['rm', filename+'.class', filename])
             else:
-                print('Passed directory "--features_dir {}" not valid.'.format(features_dir))
-            print("FINISHED TESTING OF BLOCK PARSING PHASE.")
+                mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
+
 
 
 def compiler_gate_benchmark_runner(tasks, extraVMarguments=None, prefix=''):
