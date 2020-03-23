@@ -2,7 +2,7 @@ TESTING **Parse Important Features Graal Compiler Phase**: description of the fe
 
 For running our test please use mx tool (just invoke: "mx gate --tags features --features_dir PATH_TO_DIRECTORY_WITH_TEST_FILES")
 
-* You can use our tool for adding "features test" examples, by simply running: **./src/makeftest   PATH_TO_TESTS_DB   PATH_TO_IGV_BIN_FOLDER** (Linux based).
+* You can use our tool for adding "features test" examples, by simply running: **./src/makeftest FEATURES_TESTS_DIR IGV_BIN_DIR** (Linux based).
 
 * Instead of this, you can write it down **manually**:
 

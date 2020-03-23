@@ -123,7 +123,7 @@ print('Created ground truth file {}.json'.format(source))
 print('Cleaning created directory..')
 igvProcess.terminate()
 subprocess.Popen(['rm', '-f', source, source+'.class', '.err', '.out'])
-subprocess.Popen(['rm', '-rf', source+'Graph.bgv', 'graal_dumps'])
+subprocess.Popen(['rm', '-rf', 'graal_dumps'])
 subprocess.Popen(['rm -rf *~ important*'], shell=True)
 
 # FINISH SCRIPT

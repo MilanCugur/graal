@@ -4,6 +4,7 @@ import itertools
 import sys
 import re
 import subprocess
+import termcolor
 
 """
 Call: python createFeatureTest.py DB_PATH IGV_BIN_PATH
@@ -14,7 +15,8 @@ if len(sys.argv)!=3:
     print('Make feature test tool call: $./makeftest DB_PATH IGV_BIN_PATH')
     exit(1)
     
-print('Welcome to "features tests" creator.\nEnsure you have emacs and native-image tool preinstalled.\n\n')
+print('Welcome to "features tests" creator.')
+print(termcolor.colored('Ensure you have emacs and native-image tool preinstalled.\n', 'red'))
 
 DB_PATH = sys.argv[1]
 IGV_BIN_PATH = sys.argv[2]
@@ -121,7 +123,7 @@ print('Created ground truth file {}.json'.format(source))
 print('Cleaning created directory..')
 igvProcess.terminate()
 subprocess.Popen(['rm', '-f', source, source+'.class', '.err', '.out'])
-subprocess.Popen(['rm', '-rf', source+'Graph.bgv', 'graal_dumps'])
+subprocess.Popen(['rm', '-rf', source+'Graph.bgv', 'graal_dumps'])  # save graph file
 subprocess.Popen(['rm -rf *~ important*'], shell=True)
 
 # FINISH SCRIPT

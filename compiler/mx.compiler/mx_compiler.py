@@ -571,8 +571,10 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
                 for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
                     sons.add(frozenset(sonsPattern.split(son)))
                 check_data[(check_source, head, nodeId, nodeType)]=sons
+    print('Control Splits to be validated: ')
     for elem in check_data:
         print(elem)
+
     valid = True  # Assume that Source Function blocks are valid parsed
     with open(parsedData, mode='r') as csv_read, open(resultData, mode='w') as csv_write:
         csv_reader = csv.DictReader(csv_read)
@@ -598,7 +600,7 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
 
             csValid = True # Assume that current Control Split blocks are valid parsed
             for cs in elem[None]:
-                son = frozenset(map(lambda x: x.strip(), cs[1:-1].split(",")))  # Appropriate parsed blocks
+                son = frozenset(map(lambda x: x.strip(), cs.replace('[','').replace(']', '').split(",")))  # Appropriate parsed blocks
                 branchValid = son in orign  # Compare sets
                 if not branchValid:
                     csValid = False
@@ -690,7 +692,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                     print('Testing file {}.java..'.format(filename))
                     if 'README.md' in content:
                         with open('./README.md', 'r') as r:
-                            mx.log(r.read())
+                            mx.log(r.read().strip())
                     funcnames = None
                     with open(filename+'.json', 'r') as f:
                         css = json.load(f)

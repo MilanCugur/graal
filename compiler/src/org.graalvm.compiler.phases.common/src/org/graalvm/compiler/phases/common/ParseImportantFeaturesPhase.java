@@ -403,7 +403,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
                 if(sonHead instanceof LoopExitNode)
-                    writer.printf(",x");  // x is an abbreviation for LoopExitNode
+                    writer.printf(",\"x(%s)\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
                 else
                     writer.printf(",\"%s\"", sonPath);
             }
