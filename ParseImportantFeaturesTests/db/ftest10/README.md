@@ -1,1 +1,0 @@
-Function example_ftest10: test throw (no catch)

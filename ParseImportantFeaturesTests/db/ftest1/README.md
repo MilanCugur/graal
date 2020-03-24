@@ -1,1 +1,0 @@
-Function example_ftest1: test simple if-else statement.

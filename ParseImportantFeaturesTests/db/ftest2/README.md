@@ -1,1 +1,0 @@
-Function example_ftest2: test nested if-else statement.
