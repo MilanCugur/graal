@@ -42,6 +42,7 @@ import hashlib
 import io
 import csv
 import json
+import datetime
 
 import mx_truffle
 import mx_sdk_vm
@@ -677,46 +678,59 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
         if t:
             mx.log("Starting of testing Parsing Important Features Phase.")
             mx.warn("Ensure you have correct version of \"native-image\" tool built.")
-            mx.log("Changing the working directory.")
+            os.chdir(features_dir)
+            resultDir = './FeaturesTesting_{}.csv'.format(str(datetime.datetime.now()).replace(' ', '_'))
+            r = open(resultDir, 'w')
+            csv_writer = csv.DictWriter(r, fieldnames=['Test', 'Result', 'Timestamp'])
+            csv_writer.writeheader()
+
             if os.path.isdir(features_dir):  # mx.ensure_dir_exists('MakeGraalJDK-ws') mogu i to
-                os.chdir(features_dir)
-                mx.log("Directory succesfully changed to {}.".format(features_dir))
-
-                content = os.listdir('.')
-                candidates = map(lambda x: x.split('.')[0], filter(lambda x: x.endswith('.java'), content))
-                filenames = [candidate for candidate in candidates if candidate+'.json' in content]
-                if len(filenames)!=1:
-                    mx.log_error('In passed file {} must be only one .java source with ground truth .jason file.'.format(features_dir))
-                else:
-                    filename = filenames[0]
-                    print('Testing file {}.java..'.format(filename))
-                    if 'README.md' in content:
-                        with open('./README.md', 'r') as r:
-                            mx.log(r.read().strip())
-                    funcnames = None
-                    with open(filename+'.json', 'r') as f:
-                        css = json.load(f)
-                        if isinstance(css, dict):  # case of only one function in file
-                            css = [css]
-                        funcnames = [str(cs['source']) for cs in css]
-                    print('Testing functions: {}..'.format(str(funcnames)))
-                    mx.log('Compiling {}.java to bytecode.'.format(filename))
-                    mx.run(['javac', filename+'.java'])
-
-                    mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
-                    mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
-
-                    mx.log('Compare generated results with the ground truth..')
-                    if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
-                        print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
+                for root, dirs, files in os.walk(features_dir):
+                    candidates = map(lambda x: x.split('.')[0], filter(lambda x: x.endswith('.java'), files))
+                    filenames = [candidate for candidate in candidates if candidate+'.json' in files]
+                    if len(filenames)>1:  # can be empty subfolders
+                        mx.log_error('In passed file {} founded multiple .java source with ground truth .jason file.'.format(features_dir))
+                    elif len(filenames)==0:
+                        continue
                     else:
-                        mx.log_error("Parse Important Features Tests Failed.\n")
-                    mx.log(msg="Detailed information can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
+                        mx.log("Changing the working directory.")
+                        os.chdir(root)
+                        mx.log("Directory succesfully changed to {}.".format(root))
 
-                    mx.log('Cleaning the current directory.')
-                    mx.run(['rm', filename+'.class', filename])
+                        filename = filenames[0]
+                        print('Testing file {}.java..'.format(filename))
+                        if 'README.md' in files:
+                            with open('./README.md', 'r') as r:
+                                mx.log(r.read().strip())
+                        funcnames = None
+                        with open(filename+'.json', 'r') as f:
+                            css = json.load(f)
+                            if isinstance(css, dict):  # case of only one function in file
+                                css = [css]
+                            funcnames = [str(cs['source']) for cs in css]
+                        print('Testing functions: {}..'.format(str(funcnames)))
+                        mx.log('Compiling {}.java to bytecode.'.format(filename))
+                        mx.run(['javac', filename+'.java'])
+
+                        mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
+                        mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
+
+                        mx.log('Compare generated results with the ground truth..')
+                        if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
+                            print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
+                            csv_writer.writerow({'Test':filename, 'Result':'True', 'Timestamp':str(datetime.datetime.now())})
+                        else:
+                            mx.log_error("Parse Important Features Tests Failed.\n")
+                            csv_writer.writerow({'Test':filename, 'Result':'False', 'Timestamp':str(datetime.datetime.now())})
+                        mx.log(msg="Detailed information can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
+
+                        mx.log('Cleaning the current directory.')
+                        mx.run(['rm', '-rf', filename+'.class', filename, 'graal_dumps'])
+                        subprocess.Popen(['rm -rf *~'], shell='True')
             else:
                 mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
+            r.close()
+            mx.log('Parse Important Features Tests: Results are written to {}.'.format(os.path.join(features_dir, resultDir)))
 
 
 
