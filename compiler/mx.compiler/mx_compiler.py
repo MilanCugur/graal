@@ -545,7 +545,7 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
     Compare groundTruthData with the parsedData.
     Return True/False as general test results. Detailed information is written to resultData.
     """
-    assert groundTruthData.endswith(".json")
+    assert groundTruthData.endswith(".json")  # Check file extensions
     assert parsedData.endswith(".csv")
     assert resultData.endswith(".csv")
 
@@ -554,7 +554,7 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
 
     with open(groundTruthData) as f:
         funcdata = json.load(f)  # list of functions ground truth ("source" and "control splits" fields)
-        if isinstance(funcdata, dict):  # fix only one func
+        if isinstance(funcdata, dict):  # fix only one func; cause of json.load
             funcdata = [funcdata]
         for data in funcdata:
             check_source = data['source']  # Source Function name
@@ -576,7 +576,7 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
     for elem in check_data:
         print(elem)
 
-    valid = True  # Assume that Source Function blocks are valid parsed
+    valid = True  # Assume that source functions Control Splits are valid parsed
     with open(parsedData, mode='r') as csv_read, open(resultData, mode='w') as csv_write:
         csv_reader = csv.DictReader(csv_read)
         csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'Node BCI', 'head', 'Valid Control Split'])
@@ -684,7 +684,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
             csv_writer = csv.DictWriter(r, fieldnames=['Test', 'Result', 'Timestamp'])
             csv_writer.writeheader()
 
-            if os.path.isdir(features_dir):  # mx.ensure_dir_exists('MakeGraalJDK-ws') mogu i to
+            if os.path.isdir(features_dir):
                 for root, dirs, files in os.walk(features_dir):
                     candidates = map(lambda x: x.split('.')[0], filter(lambda x: x.endswith('.java'), files))
                     filenames = [candidate for candidate in candidates if candidate+'.json' in files]
@@ -702,10 +702,10 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                         if 'README.md' in files:
                             with open('./README.md', 'r') as r:
                                 mx.log(r.read().strip())
-                        funcnames = None
+                        funcnames = None  # Parse target function names from .jason ground truth file
                         with open(filename+'.json', 'r') as f:
                             css = json.load(f)
-                            if isinstance(css, dict):  # case of only one function in file
+                            if isinstance(css, dict):  # case of only one function in a file; cause of json.load
                                 css = [css]
                             funcnames = [str(cs['source']) for cs in css]
                         print('Testing functions: {}..'.format(str(funcnames)))
@@ -726,7 +726,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
 
                         mx.log('Cleaning the current directory.')
                         mx.run(['rm', '-rf', filename+'.class', filename, 'graal_dumps'])
-                        subprocess.Popen(['rm -rf *~'], shell='True')
+                        subprocess.Popen(['rm -rf *~'], shell='True')  # remove emacs backup file, use subprocess cause of regex
             else:
                 mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
             r.close()

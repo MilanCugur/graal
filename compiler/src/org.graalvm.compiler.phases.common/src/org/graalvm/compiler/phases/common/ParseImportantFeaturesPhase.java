@@ -24,6 +24,16 @@
  */
 package org.graalvm.compiler.phases.common;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Stack;
+import java.util.stream.Collectors;
+
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -45,20 +55,13 @@ import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.graph.ReentrantBlockIterator;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 
-import java.nio.charset.StandardCharsets;
-import java.util.stream.Collectors;
-import java.util.*;
-import java.io.*;
-
-import jdk.vm.ci.meta.ResolvedJavaMethod;
-
 /* Representation of a control split */
 class ControlSplit {
     private Block block;  // Block which is ended with control split node
     private List<Block> pathToBlock;  // The path leading to this block
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
-    private EconomicSet<AbstractBeginNode> tailHeads;  // If I go through my personal merge and I am not complete at that time
+    private EconomicSet<AbstractBeginNode> tailHeads;  // If I go through my personal merge and I am not complete at that time, If I am finished at my personal merge but that merge is continue-in-switch caused, Simply backpropagate to fathers
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -79,27 +82,27 @@ class ControlSplit {
 
     // Sons operations
     public Boolean finished(){ return this.sonsBlocks.size()==this.block.getSuccessorCount(); }
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() { return this.sonsBlocks.getEntries(); }
-    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }
-    public boolean areInSons(AbstractBeginNode node){ return this.sonsHeads.contains(node); }
-    public void addASon(List<Block> sonsPath){
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() { return this.sonsBlocks.getEntries(); }  // main getter
+    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }  // additional getter
+    public void addASon(List<Block> sonsPath){  // add
         AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
         assert this.sonsHeads.contains(sonsHead) : "ParseImportantFeaturesError: Adding invalid son.";
         assert !this.sonsBlocks.containsKey(sonsHead) : "ParseImportantFeaturesError: Adding same son twice.";
         this.sonsBlocks.put(sonsHead, new ArrayList<>(sonsPath));
         this.sonsHeads.remove(sonsHead);
     }
+    public boolean areInSons(AbstractBeginNode node){ return this.sonsHeads.contains(node); }  // check
 
     // Tails operations
-    public boolean areInTails(AbstractBeginNode node){ return this.tailHeads.contains(node); }
-    public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }
-    public void setTailBlocks(List<Block> tailBlocks) {
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); } // main getter
+    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap(){ return this.tailBlocks; }  // additional getter
+    public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }  // add
+    public void setTailBlocks(List<Block> tailBlocks) {  // add
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
         assert this.tailHeads.contains(node) : "ParseImportantFeaturesError: set tail blocks on wrong tail.";
         this.tailBlocks.put(node, new ArrayList<Block>(tailBlocks));
     }
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); }
-    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap(){ return this.tailBlocks; }
+    public boolean areInTails(AbstractBeginNode node){ return this.tailHeads.contains(node); }  // check
 }
 
 /* Graph traversal intermediate state representation */
@@ -158,14 +161,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders context) {
-        // Method filter
-        ResolvedJavaMethod orign = graph.method();
-//        String name = orign.getName();
-//        if(methodRegex!=null && !name.equals(this.methodRegex))
-//            return;
-        if(methodRegex!=null) {  // if methodRegex is null (MethodFilter not specified), parse all
+        // Filter by method
+        if(methodRegex!=null) {  // If Method Filter is not specified, parse all functions
             MethodFilter mf = MethodFilter.parse(methodRegex);
-            if (!mf.matches(orign))
+            if (!mf.matches(graph.method()))  // If Method Filter is specified, parse only target functions
                 return;
         }
 
@@ -224,7 +223,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                     targetCS.setTailBlocks(currentState.getPath());
                             }
                             // else - no one to catch
-                            // currentState path will be reset on ReentrantBlockIterator.java, @ line 170.
+                            // currentState path will be reset on ReentrantBlockIterator.java, @ line 170, eventually @ line 147.
                         }
                     } else {
                         assert false : "Node with more than one successors doesn't catch as a Control Split Node.";
@@ -244,35 +243,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                 while (splits.size() > 0) {
                     if (splits.peek().finished()) {
-                        // Finished ControlSplit (on top of the stack)
+                        // Finished Control Split (on top of the stack)
                         ControlSplit stacksTop = splits.peek();
 
-                        if(splits.size()>0 && splits.peek().finished() && personalMerge(splits.peek(), (AbstractMergeNode)merge.getBeginNode())){
-                            // cs: finished [switch] Control Split on the top of the stack
-                            // merge: current merge block
-                            // Should propagate through merge, and add merge as a cs tail. Later on, add it to the appropriate merge forward ends as their part
-                            // ex.
-                            // switch(a){
-                            //	case 1:  // B1, B2
-                            //	    System.console();
-                            //	case 2:  // B8, B9
-                            //	    System.out.println("2");
-                            //	    break;
-                            //	case 3: // B6, B7
-                            //	    System.out.println("3");
-                            //	    return;
-                            //	default: // B3
-                            //	    System.out.println("def"); // B4, B5
-                            //	}
-                            // Should append [B4, B5] to sons [B1, B2] and [B3]
-                            ControlSplit cs = splits.peek();
-                            assert merge.getBeginNode() instanceof AbstractMergeNode : "ParseImportantFeaturesError: Merge block must start with AbstractMergeNode";
-                            AbstractMergeNode __merge = (AbstractMergeNode)merge.getBeginNode();  // Current merge node
-                            int nabssons = countControlSplitAbstractEndingSons(cs);  // Number of cs Abstract Ending son's
-                            if(nabssons>__merge.forwardEndCount()){  // I have AbstractEnd son which not ends on current merge!
-                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
-                                return new TraversalState();  // Clear path and continue
-                            }
+                        // If on top of the stack are switch control split which all sons are visited, but I am currently on the merge node which is caused by continue inside the switch
+                        // (control split is finished and merge is personal for that control split)
+                        // Should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part
+                        // ex.
+                        // switch(a){
+                        //    case 1:  // B1, B2
+                        //        System.out.println();
+                        //    case 2: // B3
+                        //        System.console();  // B4, B5
+                        //        break;
+                        //    case 3:  // B6, B7
+                        //        System.out.println("3");
+                        //        return;
+                        //    default:  // B8, B9
+                        //        System.out.println("def");
+                        // }
+                        // Should append [B4, B5] to sons [B1, B2] and [B3]
+                        if(splits.size()>0 && splits.peek().finished() && personalMergeFull(splits.peek(), (AbstractMergeNode)merge.getBeginNode()) && splits.peek().getBlock().getSuccessorCount()>2){
+                            splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
+                            return new TraversalState();  // Clear path and continue
                         }
 
                         // My new path
@@ -374,6 +367,36 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return personalmerge;
     }
 
+    // Used for unconstructed Control Splits [maybe "continue" separated blocks arent at that time connected] - cause of that
+    private static boolean personalMergeFull(ControlSplit cs, AbstractMergeNode merge) {
+        // Are merge block (block starting with AbstractMergeNode merge) fully owned by Control split cs (including its tails too)
+        Iterable<List<Block>> sons = cs.getSonsPaths();
+        EconomicSet<AbstractEndNode> myEnds = EconomicSet.create(Equivalence.IDENTITY);
+        for (List<Block> son : sons) {
+            for (Block sblock : son) {
+                if (sblock.getEndNode() instanceof AbstractEndNode) {  // For merge of 2nd and higher order
+                    myEnds.add((AbstractEndNode) sblock.getEndNode());
+                }
+            }
+        }
+        for (List<Block> tail : cs.getTailsMap().getValues()){
+            for (Block tblock : tail) {
+                if (tblock.getEndNode() instanceof AbstractEndNode) {  // For merge of 2nd and higher order
+                    myEnds.add((AbstractEndNode) tblock.getEndNode());
+                }
+            }
+        }
+
+        boolean personalmerge = true;
+        for (AbstractEndNode forwardEnd : merge.forwardEnds()) {
+            if (!myEnds.contains(forwardEnd)) {
+                personalmerge = false;
+                break;
+            }
+        }
+        return personalmerge;
+    }
+
     private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path){
         if(path==null) return null;
         int i;
@@ -413,14 +436,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // tails
         EconomicMap<AbstractBeginNode, List<Block>> fulltail = cs.getTailsMap();  // Map of tail candidates
-        int n = countControlSplitAbstractEndingSons(cs);  // Number of cs sons which ends with the AbstractEndNode
 
         // writeout
         synchronized (writer) {
             long graphId = graph.graphId();
             int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
-            ResolvedJavaMethod orign = graph.method();
-            String name = orign.getName();
+            String name = graph.method().getName();
 
             writer.printf("%d,\"%s\",%s,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), ((Node) head.getEndNode()).getId(), nodeBCI, head);
             while (__sons.advance()) {
@@ -429,15 +450,32 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (sonHead instanceof LoopExitNode)
                     writer.printf(",\"x(%s)\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
                 else {
-                    Block sonEnd = sonPath.get(sonPath.size() - 1);
-                    if (sonEnd.getEndNode() instanceof AbstractEndNode) {  // if this is an Abstract End Node ending son
-                        assert sonEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor";
-                        Block next = sonEnd.getFirstSuccessor();
-                        if (next.getBeginNode() instanceof MergeNode && fulltail.containsKey(next.getBeginNode()) && personalMerge(cs, (AbstractMergeNode) next.getBeginNode()) && ((MergeNode) next.getBeginNode()).forwardEndCount() < n) {
-                            sonPath.addAll(fulltail.get(next.getBeginNode()));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                    if (cs.getBlock().getSuccessorCount() > 2) {  // Switch node
+                        while (true) {
+                            Block sonEnd = sonPath.get(sonPath.size() - 1);
+                            if (!(sonEnd.getEndNode() instanceof AbstractEndNode))  // ignore control sinking sons
+                                break;
+                            assert sonEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor.";
+                            Block next = sonEnd.getFirstSuccessor();  // next merge block
+                            AbstractBeginNode nextNode = next.getBeginNode();  // next merge node
+                            //  * next is merge node             * exist tail starting on that block  * its my personal merge 
+                            if (nextNode instanceof MergeNode && fulltail.containsKey(nextNode) && personalMergeFull(cs, (AbstractMergeNode) nextNode)) {
+                                //  * tail is personal ended
+                                List<Block> tailBody = fulltail.get(nextNode);
+                                Block tailEnd = tailBody.get(tailBody.size() - 1);
+                                if (!(tailEnd.getEndNode() instanceof AbstractEndNode))
+                                    break;  // vidi da li ovog trebas da dodas
+                                assert tailEnd.getSuccessorCount() == 1 : "Interna provera";
+                                Block tnext = tailEnd.getFirstSuccessor();
+                                AbstractBeginNode tnextNode = tnext.getBeginNode();
+                                if (!fulltail.containsKey(tnextNode)) // i ovde mozda treba fullPersonalMerge
+                                    break;
+                                sonPath.addAll(fulltail.get(next.getBeginNode()));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                            } else
+                                break;
                         }
                     }
-                    writer.printf(",\"%s\"", sonPath);
+                    writer.printf(",\"%s\"", sonPath);  // write sons path to database
                 }
             }
             writer.printf("%n");
@@ -469,16 +507,5 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             newPath.addAll(tail);
 
         return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates [continue in switch control split, we have blocks duplication by branches]
-    }
-
-    private static int countControlSplitAbstractEndingSons(ControlSplit cs){
-        // Count number of Control Split sons, which path is ending with the Abstract End Node
-        int n = 0;
-        for(List<Block> son : cs.getSonsPaths()){
-            Block sonEnd = son.get(son.size()-1);
-            if(sonEnd.getEndNode() instanceof AbstractEndNode)
-                n += 1;
-        }
-        return n;
     }
 }
