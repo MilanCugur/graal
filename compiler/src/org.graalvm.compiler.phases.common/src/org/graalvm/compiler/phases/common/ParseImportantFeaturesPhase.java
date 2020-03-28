@@ -30,6 +30,7 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Stack;
 import java.util.stream.Collectors;
@@ -57,7 +58,7 @@ import org.graalvm.compiler.phases.schedule.SchedulePhase;
 
 /* Representation of a control split */
 class ControlSplit {
-    private Block block;  // Block which is ended with control split node
+    private Block block;  // Block ending with control split node
     private List<Block> pathToBlock;  // The path leading to this block
     private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
@@ -68,12 +69,12 @@ class ControlSplit {
         assert block.getEndNode() instanceof ControlSplitNode : "ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).";
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
-        this.sonsBlocks = EconomicMap.create(Equivalence.IDENTITY);
-        this.sonsHeads =  EconomicSet.create(Equivalence.IDENTITY);
+        this.sonsBlocks = EconomicMap.create(Equivalence.DEFAULT);
+        this.sonsHeads =  EconomicSet.create(Equivalence.DEFAULT);
         for(Block son: block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
-        this.tailHeads = EconomicSet.create(Equivalence.IDENTITY);
-        this.tailBlocks = EconomicMap.create(Equivalence.IDENTITY);
+        this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
+        this.tailBlocks = EconomicMap.create(Equivalence.DEFAULT);
     }
 
     public Block getBlock(){ return this.block; }
@@ -81,9 +82,10 @@ class ControlSplit {
     public List<Block> getPathToBlock() { return pathToBlock; }
 
     // Sons operations
-    public Boolean finished(){ return this.sonsBlocks.size()==this.block.getSuccessorCount(); }  // Todo: when this.sonsHeads are empty
+    public Boolean finished(){ return this.sonsHeads.isEmpty(); }
     public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() { return this.sonsBlocks.getEntries(); }  // main getter
-    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }  // additional getter
+    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap(){ return this.sonsBlocks; }  // additional getter
+    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }  // auxiliary getter
     public void addASon(List<Block> sonsPath){  // add
         AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
         assert this.sonsHeads.contains(sonsHead) : "ParseImportantFeaturesError: Adding invalid son.";
@@ -135,7 +137,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id,Source Function,Node Description,Node Id,Node BCI,head%n");
+            writer.printf("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head%n");
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
@@ -263,18 +265,16 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         //        System.out.println("def");
                         // }
                         // Should append [B4, B5] to sons [B1, B2] and [B3]
-                        // This also catches ending merge for switch control splits and catch all tails.
-                        if(splits.size()>0 && splits.peek().finished() && personalMerge(splits.peek(), (AbstractMergeNode)merge.getBeginNode(), false)){
+                        // This also catches ending merge (last tail) for switch control splits. todo remove if here
+                        if (splits.size() > 0 && splits.peek().finished()) { // completed switch control split which son-reached the current merge node and not all of his sons reach it
                             int card = splits.peek().getBlock().getSuccessorCount(); // Control Split cardinality
-                            int mend = 0;  // Number of sons which end on this merge
-                            for(List<Block> son : splits.peek().getSonsPaths()){
-                                Block sonend = son.get(son.size()-1);
-                                assert sonend.getSuccessorCount()<=1 : "ParseImportantFeaturesError: path must be ended on ControlSink or AbstractEnd Node.";
-                                if(sonend.getSuccessorCount()==1 && sonend.getFirstSuccessor()==merge)
-                                    mend += 1;
+                            boolean csreachm = false;  // Does cs reach this merge
+                            for (List<Block> son : splits.peek().getSonsPaths()) {
+                                if (pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
+                                    csreachm = true;
                             }
                             // it is switch node which all sons not end on the same merge node
-                            if(card>2 && mend<card) {
+                            if (card > 2 && csreachm) {
                                 splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
                                 return new TraversalState();  // Clear path and continue
                             }
@@ -303,8 +303,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             } else
                                 continue; // Son not added; No one waiting for me
                         }
-                    } else
+                    } else {
+                        // izmena todo: samo nek se desava ovo za >2
+                        splits.peek().setTailNode(merge.getBeginNode()); // izmena tamo labele 8, jer sad hocu rep switchs
                         return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path (and no current wait), later on, when finish that Control Split, just do regularly
+                    }
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
             }
@@ -370,10 +373,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
 
-        if(!constructed){  // If control split isn't constructed at the time of a call, look also at the tails abstract ends (ex. continue inside switch etc.)
+        if(!constructed){  // If control split isn't constructed at the time of a function call, look also at the tails abstract ends (ex. continue inside switch etc.)
             for (List<Block> tail : cs.getTailsMap().getValues()){
                 for (Block tblock : tail) {
-                    if (tblock.getEndNode() instanceof AbstractEndNode) {  // For merge of 2nd and higher order
+                    if (tblock.getEndNode() instanceof AbstractEndNode) {
                         myEnds.add((AbstractEndNode) tblock.getEndNode());
                     }
                 }
@@ -417,7 +420,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph){
-        // Pop element from the top of a stack and write it out to database; return integrated path
+        // Pop element from the top of a stack and write it out to the database; return integrated path
         assert splits.size()>0 && splits.peek().finished() :  "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
         List<Block> newPath = null;
 
@@ -426,66 +429,90 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         Block head = cs.getBlock();
         int card = head.getSuccessorCount();
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tail = cs.getTails();
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
 
-        // tails
-        EconomicMap<AbstractBeginNode, List<Block>> fulltail = cs.getTailsMap();  // Map of tail candidates
-
-        // writeout
-        synchronized (writer) {
-            long graphId = graph.graphId();
-            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
-            String name = graph.method().getName();
-
-            writer.printf("%d,\"%s\",%s,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), ((Node) head.getEndNode()).getId(), nodeBCI, head);
+        // In the case of the switch control split eventually do a sons concatenation; filled up pinned path for every son
+        EconomicMap<AbstractBeginNode, List<Block>> __fulltails = cs.getTailsMap();
+        EconomicMap<AbstractBeginNode, List<Block>> __fullsons = cs.getSonsMap();
+        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths in case of the switch control splits
+        if(card>2) {
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
+
+                pinnedPaths.put(sonHead, null);  // initially put null value
+
                 if (sonHead instanceof LoopExitNode)
-                    writer.printf(",\"x(%s)\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                    continue;
                 else {
-                    List<Block> sonPinned = null;  // The path from the sons end to the outside world
-                    while (card > 2) {  // Try to concatenate tails to sons (asymmetric switch nodes case)
+                    while (true) {  // traverse following sons path
                         Block sonEnd = sonPath.get(sonPath.size() - 1);
-                        if (!(sonEnd.getEndNode() instanceof AbstractEndNode))  // stop on control sink
+                        if (!(sonEnd.getEndNode() instanceof AbstractEndNode))  // stop on Control Sink sons
                             break;
                         assert sonEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor.";
                         Block next = sonEnd.getFirstSuccessor();  // next merge block
                         AbstractBeginNode nextNode = next.getBeginNode();  // next merge node
-                        //  If next is merge node and exist tail starting on that block and its my personal merge
-                        if (nextNode instanceof MergeNode && fulltail.containsKey(nextNode) && personalMerge(cs, (AbstractMergeNode) nextNode, false)) {
-                            // If tail is personal ended add it as a son, else add it as a pinned path and break
-                            List<Block> tailBody = fulltail.get(nextNode);
+                        if (nextNode instanceof MergeNode && __fulltails.containsKey(nextNode)) {
+                            // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
+                            List<Block> tailBody = __fulltails.get(nextNode);
                             Block tailEnd = tailBody.get(tailBody.size() - 1);
                             if (tailEnd.getEndNode() instanceof AbstractEndNode) {
                                 assert tailEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor.";
                                 Block tnext = tailEnd.getFirstSuccessor();
                                 AbstractBeginNode tnextNode = tnext.getBeginNode();
-                                if (!fulltail.containsKey(tnextNode)) {
-                                    sonPinned = new ArrayList<>(fulltail.get(next.getBeginNode()));
+                                if (!__fulltails.containsKey(tnextNode)) {
+                                    pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(next.getBeginNode())));
                                     break;
-                                }else {
-                                    sonPath.addAll(fulltail.get(next.getBeginNode()));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                                } else {  // Inner sub-path
+                                    sonPath.addAll(__fulltails.get(next.getBeginNode()));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
                                 }
                             } else {
                                 assert tailEnd.getEndNode() instanceof ControlSinkNode : "ParseImportantFeaturesError: can't end path on FixedWithNext Node or on ControlSplitNode";
-                                sonPinned = new ArrayList<>(fulltail.get(next.getBeginNode()));
+                                pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(next.getBeginNode())));
                                 break;
                             }
-                        } else
+                        }else
                             break;
                     }
-                    writer.printf(",\"%s, p(%s)\"", sonPath, sonPinned);  // write sons path to database; sonPinned represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node)
                 }
+                __fullsons.put(sonHead, sonPath);
+            }
+            // If all sons have same pinned path, don't use it at all (for single merge with continue breaks)
+            EconomicSet<List<Block>> tmp = EconomicSet.create(Equivalence.DEFAULT);
+            boolean nullexists = false;
+            for(List<Block> elem : pinnedPaths.getValues())
+                if(elem != null)
+                    tmp.add(elem);
+                else
+                    nullexists = true;
+            if(tmp.size()==1 && !nullexists)
+                pinnedPaths.clear();
+        }
+
+        // writeout
+        __sons = cs.getSons();
+        synchronized (writer) {
+            long graphId = graph.graphId();
+            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
+            String name = graph.method().getName();
+
+            writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), card, ((Node) head.getEndNode()).getId(), nodeBCI, head);
+            while (__sons.advance()) {
+                AbstractBeginNode sonHead = __sons.getKey();
+                List<Block> sonPath = __sons.getValue();
+                if (sonHead instanceof LoopExitNode)
+                    writer.printf(",\"x(%s)\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                else
+                    writer.printf(",\"%s, p(%s)\"", sonPath, pinnedPaths.get(sonHead)); // write sons path to database; sonPinned represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node)
             }
             writer.printf("%n");
         }
 
         // Parse tail
         List<Block> tail = new ArrayList<Block>();
-        while(__tail.advance()){
-            AbstractBeginNode csNode = __tail.getKey();
-            List<Block> csBlocks = __tail.getValue();
+        while(__tails.advance()){
+            AbstractBeginNode csNode = __tails.getKey();
+            List<Block> csBlocks = __tails.getValue();
             if(personalMerge(cs, (AbstractMergeNode)csNode, true))  // Path which follow current control split; for the propagation to the older splits.
                 tail.addAll(csBlocks);
             else if(splits.size()>0){
@@ -507,5 +534,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             newPath.addAll(tail);
 
         return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
+    }
+
+    private static EconomicSet<AbstractMergeNode> pathReachable(List<Block> path) {
+        // Are merge block reachable by path?
+        EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
+        for (Block b : path) {
+            if (b.getEndNode() instanceof  AbstractEndNode) {
+                Block succ = b.getFirstSuccessor();
+                if (succ.getBeginNode() instanceof AbstractMergeNode)
+                    reach.add((AbstractMergeNode)succ.getBeginNode());
+            }
+        }
+        return reach;
     }
 }
