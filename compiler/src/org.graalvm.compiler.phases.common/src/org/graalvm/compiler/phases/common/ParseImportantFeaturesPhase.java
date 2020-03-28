@@ -30,7 +30,6 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Stack;
 import java.util.stream.Collectors;
@@ -270,7 +269,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             int card = splits.peek().getBlock().getSuccessorCount(); // Control Split cardinality
                             boolean csreachm = false;  // Does cs reach this merge
                             for (List<Block> son : splits.peek().getSonsPaths()) {
-                                if (pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
+                                if (__pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
                                     csreachm = true;
                             }
                             // it is switch node which all sons not end on the same merge node
@@ -445,34 +444,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (sonHead instanceof LoopExitNode)
                     continue;
                 else {
+                    List<Block> newMeat = new ArrayList<>(sonPath);
                     while (true) {  // traverse following sons path
-                        Block sonEnd = sonPath.get(sonPath.size() - 1);
-                        if (!(sonEnd.getEndNode() instanceof AbstractEndNode))  // stop on Control Sink sons
+                        EconomicSet<AbstractMergeNode> sonEnds = __pathReachable(newMeat);
+                        newMeat.clear();
+                        if (sonEnds.isEmpty())
                             break;
-                        assert sonEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor.";
-                        Block next = sonEnd.getFirstSuccessor();  // next merge block
-                        AbstractBeginNode nextNode = next.getBeginNode();  // next merge node
-                        if (nextNode instanceof MergeNode && __fulltails.containsKey(nextNode)) {
-                            // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
-                            List<Block> tailBody = __fulltails.get(nextNode);
-                            Block tailEnd = tailBody.get(tailBody.size() - 1);
-                            if (tailEnd.getEndNode() instanceof AbstractEndNode) {
-                                assert tailEnd.getSuccessorCount() == 1 : "ParseImportantFeaturesError: AbstractEndNode should have only one successor.";
-                                Block tnext = tailEnd.getFirstSuccessor();
-                                AbstractBeginNode tnextNode = tnext.getBeginNode();
-                                if (!__fulltails.containsKey(tnextNode)) {
-                                    pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(next.getBeginNode())));
+                        for(AbstractMergeNode nextNode : sonEnds) {
+                            if (__fulltails.containsKey(nextNode)) {
+                                // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
+                                List<Block> tailBody = __fulltails.get(nextNode);
+                                if(__hasInnerExit(tailBody, __fulltails.getKeys())){  // Inner sub-path
+                                    newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                                }else{
+                                    pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
                                     break;
-                                } else {  // Inner sub-path
-                                    sonPath.addAll(__fulltails.get(next.getBeginNode()));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
                                 }
-                            } else {
-                                assert tailEnd.getEndNode() instanceof ControlSinkNode : "ParseImportantFeaturesError: can't end path on FixedWithNext Node or on ControlSplitNode";
-                                pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(next.getBeginNode())));
-                                break;
                             }
-                        }else
+                        }
+                        if(newMeat.size()==0 || pinnedPaths.get(sonHead)!=null) {
+                            //sonPath.stream().distinct().collect(Collectors.toList()); // remove duplicates [B13, B14] ex. x2
                             break;
+                        }else
+                            sonPath.addAll(new ArrayList<>(newMeat));
                     }
                 }
                 __fullsons.put(sonHead, sonPath);
@@ -536,8 +530,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
     }
 
-    private static EconomicSet<AbstractMergeNode> pathReachable(List<Block> path) {
-        // Are merge block reachable by path?
+    private static EconomicSet<AbstractMergeNode> __pathReachable(List<Block> path) {
+        // Return set of Merge nodes which are reachable by current path
         EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
         for (Block b : path) {
             if (b.getEndNode() instanceof  AbstractEndNode) {
@@ -547,5 +541,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
         return reach;
+    }
+
+    private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads){
+        // Return true if path has merge nodes which reachable between tail heads nodes
+        EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
+        for(AbstractBeginNode thead : tailHeads)
+            if(reach.contains((AbstractMergeNode)thead))
+                return true;
+        return false;
     }
 }
