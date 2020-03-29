@@ -97,6 +97,7 @@ class ControlSplit {
     // Tails operations
     public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); } // main getter
     public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap(){ return this.tailBlocks; }  // additional getter
+    public Iterable<List<Block>> getTailsPaths(){ return this.tailBlocks.getValues(); }  // auxiliary getter
     public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }  // add
     public void setTailBlocks(List<Block> tailBlocks) {  // add
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
@@ -265,17 +266,30 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // }
                         // Should append [B4, B5] to sons [B1, B2] and [B3]
                         // This also catches ending merge (last tail) for switch control splits. todo remove if here
-                        if (splits.size() > 0 && splits.peek().finished()) { // completed switch control split which son-reached the current merge node and not all of his sons reach it
-                            int card = splits.peek().getBlock().getSuccessorCount(); // Control Split cardinality
-                            boolean csreachm = false;  // Does cs reach this merge
-                            for (List<Block> son : splits.peek().getSonsPaths()) {
-                                if (__pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
-                                    csreachm = true;
+//                        if (splits.size() > 0 && splits.peek().finished()) { // completed switch control split which son-reached the current merge node and not all of his sons reach it
+//                            int card = splits.peek().getBlock().getSuccessorCount(); // Control Split cardinality
+//                            boolean csreachm = false;  // Does cs reach this merge
+//                            for (List<Block> son : splits.peek().getSonsPaths()) {
+//                                if (__pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
+//                                    csreachm = true;
+//                            }
+//                            // it is switch node which all sons not end on the same merge node
+//                            if (card > 2 && csreachm) {
+//                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
+//                                return new TraversalState();  // Clear path and continue
+//                            }
+//                        }
+                        if(splits.peek().getBlock().getSuccessorCount()>2){  // switch case
+                            // switch node case
+                            EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
+                            for(List<Block> son : splits.peek().getSonsPaths()){
+                                reach.addAll(__pathReachable(son));
                             }
-                            // it is switch node which all sons not end on the same merge node
-                            if (card > 2 && csreachm) {
-                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
-                                return new TraversalState();  // Clear path and continue
+                            for(List<Block> tail : splits.peek().getTailsPaths())
+                                reach.remove((AbstractMergeNode)tail.get(0).getBeginNode());
+                            if(reach.size()>0) {
+                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail, ne skidaj sa steka
+                                return new TraversalState();  // ok mi je da bekpropagira unazad
                             }
                         }
 
@@ -531,7 +545,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static EconomicSet<AbstractMergeNode> __pathReachable(List<Block> path) {
-        // Return set of Merge nodes which are reachable by current path
+        // Return set of Merge nodes which are reachable by the current path
         EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
         for (Block b : path) {
             if (b.getEndNode() instanceof  AbstractEndNode) {
@@ -544,11 +558,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads){
-        // Return true if path has merge nodes which reachable between tail heads nodes
+        // Return true if path has merge nodes which reachable between tail heads nodes (return only real reachable)
         EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
         for(AbstractBeginNode thead : tailHeads)
             if(reach.contains((AbstractMergeNode)thead))
                 return true;
+        for(Block b : path)
+            if(b.getBeginNode() instanceof AbstractMergeNode)
+                reach.remove((AbstractMergeNode)b.getBeginNode());
         return false;
     }
 }
