@@ -570,7 +570,11 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
                 sons = set()
                 sonsPattern = re.compile("^\s+|\s*,\s*|\s+$")
                 for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
-                    sons.add(frozenset(sonsPattern.split(son)))
+                    tmp = son.split('--')
+                    if len(tmp)!=2:
+                        mx.log_error("File {} corrupted (branch tail information not provided).".format(groundTruthData))
+                    son, tail = tmp[0], tmp[1]
+                    sons.add((frozenset(sonsPattern.split(son)), frozenset(sonsPattern.split(tail))))   # (son_blocks, pinned_tail_blocks)
                 check_data[(check_source, head, nodeId, nodeType)]=sons
     print('Control Splits to be validated: ')
     for elem in check_data:
@@ -601,8 +605,13 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
 
             csValid = True # Assume that current Control Split blocks are valid parsed
             for cs in elem[None]:
-                son = frozenset(map(lambda x: x.strip(), cs.replace('[','').replace(']', '').split(",")))  # Appropriate parsed blocks
-                branchValid = son in orign  # Compare sets
+                tmp = cs.split('][')
+                if len(tmp)!=2:
+                    mx.log_error("File {} corrupted (branch tail information not provided).".format(parsedData))
+                son, tail = tmp[0], tmp[1]
+                son = frozenset(map(lambda x: x.strip(), son.replace('[','').replace(']', '').split(",")))  # Appropriate son's blocks
+                tail = frozenset(map(lambda x: x.strip(), tail.replace('[','').replace(']', '').split(",")))  # Appropriate tail blocks
+                branchValid = (son, tail) in orign  # Compare branch data: (branch_blocks, pinned_tail_blocks)
                 if not branchValid:
                     csValid = False
             csv_writer.writerow({'Graph Id':_id, 'Source Function':_source, 'Node Description':str(nodeId)+"|"+_nodeType, 'Node Id':_nodeId, 'Node BCI':_nodeBCI, 'head':_head, 'Valid Control Split':csValid})
