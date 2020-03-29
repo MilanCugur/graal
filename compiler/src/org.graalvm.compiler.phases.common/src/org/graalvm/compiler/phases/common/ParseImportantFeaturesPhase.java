@@ -163,8 +163,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders context) {
-        // Filter by method
-        if(methodRegex!=null) {  // If Method Filter is not specified, parse all functions
+        if(methodRegex!=null) {  // If Method Filter is not specified, parse all functions, otherwise parse only desired function[s]
             MethodFilter mf = MethodFilter.parse(methodRegex);
             if (!mf.matches(graph.method()))  // If Method Filter is specified, parse only target functions
                 return;
@@ -175,7 +174,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         BlockMap<List<Node>> blockToNode = null;
         NodeMap<Block> nodeToBlock = null;
         try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
-            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.EARLIEST_WITH_GUARD_ORDER, cfg);
+            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.EARLIEST_WITH_GUARD_ORDER, cfg);  // Do scheduling because of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
@@ -248,48 +247,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // Finished Control Split (on top of the stack)
                         ControlSplit stacksTop = splits.peek();
 
-                        // If on top of the stack are switch control split which all sons are visited, but I am currently on the merge node which is caused by continue inside the switch
-                        // (control split is finished and merge is personal for that control split)
-                        // Should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part
-                        // ex.
-                        // switch(a){
-                        //    case 1:  // B1, B2
-                        //        System.out.println();
-                        //    case 2: // B3
-                        //        System.console();  // B4, B5
-                        //        break;
-                        //    case 3:  // B6, B7
-                        //        System.out.println("3");
-                        //        return;
-                        //    default:  // B8, B9
-                        //        System.out.println("def");
-                        // }
-                        // Should append [B4, B5] to sons [B1, B2] and [B3]
-                        // This also catches ending merge (last tail) for switch control splits. todo remove if here
-//                        if (splits.size() > 0 && splits.peek().finished()) { // completed switch control split which son-reached the current merge node and not all of his sons reach it
-//                            int card = splits.peek().getBlock().getSuccessorCount(); // Control Split cardinality
-//                            boolean csreachm = false;  // Does cs reach this merge
-//                            for (List<Block> son : splits.peek().getSonsPaths()) {
-//                                if (__pathReachable(son).contains((AbstractMergeNode)merge.getBeginNode()))
-//                                    csreachm = true;
-//                            }
-//                            // it is switch node which all sons not end on the same merge node
-//                            if (card > 2 && csreachm) {
-//                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
-//                                return new TraversalState();  // Clear path and continue
-//                            }
-//                        }
-                        if(splits.peek().getBlock().getSuccessorCount()>2){  // switch case
-                            // switch node case
-                            EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
+                        // If on top of the stack are switch control split which is not fully finished
+                        // Should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part or simply propagate it upwards
+                        if(splits.peek().getBlock().getSuccessorCount()>2){  // Switch node case
+                            EconomicSet<AbstractMergeNode> reachable = EconomicSet.create(Equivalence.DEFAULT);
                             for(List<Block> son : splits.peek().getSonsPaths()){
-                                reach.addAll(__pathReachable(son));
+                                reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
                             }
                             for(List<Block> tail : splits.peek().getTailsPaths())
-                                reach.remove((AbstractMergeNode)tail.get(0).getBeginNode());
-                            if(reach.size()>0) {
-                                splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail, ne skidaj sa steka
-                                return new TraversalState();  // ok mi je da bekpropagira unazad
+                                reachable.remove((AbstractMergeNode)tail.get(0).getBeginNode());  // remove already reached merge nodes
+                            if(reachable.size()>0) {  // Control split is currently incomplete
+                                splits.peek().setTailNode(merge.getBeginNode());  // Add next path as a tail, if its connected it will be kept, otherwise will be propagated upwards
+                                return new TraversalState();
                             }
                         }
 
@@ -317,9 +286,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                 continue; // Son not added; No one waiting for me
                         }
                     } else {
-                        // izmena todo: samo nek se desava ovo za >2
-                        splits.peek().setTailNode(merge.getBeginNode()); // izmena tamo labele 8, jer sad hocu rep switchs
-                        return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path (and no current wait), later on, when finish that Control Split, just do regularly
+                        splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail for control split completion
+                        return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path, later on, when finish that Control Split, just do regularly
                     }
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
@@ -501,7 +469,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         __sons = cs.getSons();
         synchronized (writer) {
             long graphId = graph.graphId();
-            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();
+            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
             String name = graph.method().getName();
 
             writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), card, ((Node) head.getEndNode()).getId(), nodeBCI, head);
@@ -510,8 +478,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 List<Block> sonPath = __sons.getValue();
                 if (sonHead instanceof LoopExitNode)
                     writer.printf(",\"x(%s)\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
-                else
-                    writer.printf(",\"%s, p(%s)\"", sonPath, pinnedPaths.get(sonHead)); // write sons path to database; sonPinned represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node)
+                else {
+                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - in the case of not uniformly ending switch)
+                    writer.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath); // write sons path to database
+                }
             }
             writer.printf("%n");
         }
