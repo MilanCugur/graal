@@ -722,7 +722,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                         mx.run(['javac', filename+'.java'])
 
                         mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)]))
-                        mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:MethodFilter='+','.join(funcnames)])
+                        mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:+ParseImportantFeatures', '-H:MethodFilter='+','.join(funcnames)])
 
                         mx.log('Compare generated results with the ground truth..')
                         if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):

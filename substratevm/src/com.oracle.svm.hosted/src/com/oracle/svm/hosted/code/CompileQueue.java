@@ -357,7 +357,6 @@ public class CompileQueue {
 
             assert suitesNotCreated();
             createSuites();
-            System.out.println("Starting parsing important features, somewhere over here...");
 
             try (StopTimer t = new Timer(imageName, "(compile)").start()) {
                 compileAll();

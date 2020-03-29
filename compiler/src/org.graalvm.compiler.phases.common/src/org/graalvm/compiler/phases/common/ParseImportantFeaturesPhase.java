@@ -55,6 +55,11 @@ import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.graph.ReentrantBlockIterator;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 
+/***
+ * In order to estimate the probabilities for each of the control splits branches in the Graal's IR graph, first of all, we need to parse important features of each of them.
+ * This class is used for extracting important attributes for each branch each of the Graal IR graph control splits.
+ ***/
+
 /* Representation of a control split */
 class ControlSplit {
     private Block block;  // Block ending with control split node
@@ -154,10 +159,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         LATE
     }
 
-    public static class Options { // TODO: Use false as default value and do properly setting it up
+    public static class Options {
         // @formatter:off
         @Option(help = "Parse important features from graph nodes.", type = OptionType.Expert)
-        public static final OptionKey<Boolean> ParseImportantFeatures = new OptionKey<>(true);
+        public static final OptionKey<Boolean> ParseImportantFeatures = new OptionKey<>(false);
         // @formatter:on
     }
 
@@ -255,7 +260,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                 reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
                             }
                             for(List<Block> tail : splits.peek().getTailsPaths())
-                                reachable.remove((AbstractMergeNode)tail.get(0).getBeginNode());  // remove already reached merge nodes
+                                reachable.remove((AbstractMergeNode)tail.get(0).getBeginNode());  // Remove already reached merge nodes
                             if(reachable.size()>0) {  // Control split is currently incomplete
                                 splits.peek().setTailNode(merge.getBeginNode());  // Add next path as a tail, if its connected it will be kept, otherwise will be propagated upwards
                                 return new TraversalState();
@@ -286,7 +291,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                 continue; // Son not added; No one waiting for me
                         }
                     } else {
-                        splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail for control split completion
+                        splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail
                         return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path, later on, when finish that Control Split, just do regularly
                     }
                 }
@@ -313,7 +318,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     assert loopExit.getPredecessorCount() == 1;
                     assert blockEndStates.containsKey(loopExit.getBeginNode()) : loopExit.getBeginNode() + " " + blockEndStates;
                     TraversalState exitState = blockEndStates.get(loopExit.getBeginNode());
-                    // make sure all exit states are unique objects
                     info.exitStates.add(exitState);  // Need to propagate full path to the loop exit - ex.: when son is BX1+BX2, where BX2 is LoopExit+Unwind (need to propagate B1 as a state for block BX2)
                 }
                 return info.exitStates;
@@ -409,7 +413,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                 pinnedPaths.put(sonHead, null);  // initially put null value
 
-                if (sonHead instanceof LoopExitNode)
+                if (sonHead instanceof LoopExitNode)  // cut paths on the loop exit node
                     continue;
                 else {
                     List<Block> newMeat = new ArrayList<>(sonPath);
@@ -463,7 +467,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (sonHead instanceof LoopExitNode)
                     writer.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
                 else {
-                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - in the case of not uniformly ending switch)
+                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - asymmetric ending switch case)
                     writer.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath); // write sons path to database
                 }
             }
@@ -475,7 +479,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         while(__tails.advance()){
             AbstractBeginNode csNode = __tails.getKey();
             List<Block> csBlocks = __tails.getValue();
-            if(personalMerge(cs, (AbstractMergeNode)csNode))  // Path which follow current control split; for the propagation to the older splits.
+            if(personalMerge(cs, (AbstractMergeNode)csNode))  // A path which follows the current control split; for the propagation to the older splits.
                 tail.addAll(csBlocks);
             else if(splits.size()>0){
                 splits.peek().setTailNode(csNode);  // Propagate unused tails upward
@@ -508,18 +512,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     reach.add((AbstractMergeNode)succ.getBeginNode());
             }
         }
+        for(Block b : path)
+            if(b.getBeginNode() instanceof AbstractMergeNode)
+                reach.remove((AbstractMergeNode)b.getBeginNode());  // return only real-reachable
         return reach;
     }
 
     private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads){
-        // Return true if path has merge nodes which reachable between tail heads nodes (return only real reachable)
+        // Return true if the path has reachable merge nodes in the set of the tailHeads nodes
         EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
         for(AbstractBeginNode thead : tailHeads)
             if(reach.contains((AbstractMergeNode)thead))
                 return true;
-        for(Block b : path)
-            if(b.getBeginNode() instanceof AbstractMergeNode)
-                reach.remove((AbstractMergeNode)b.getBeginNode());
         return false;
     }
 }
