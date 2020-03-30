@@ -399,13 +399,71 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         ControlSplit cs = splits.pop();
         Block head = cs.getBlock();
         int card = head.getSuccessorCount();
+
+        // In the case of the switch control split: eventually do a sons concatenation and fill up pinned path for every son
+        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = __sonsConcat(cs);
+
+        // writeout
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
+        synchronized (writer) {
+            long graphId = graph.graphId();
+            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
+            String name = graph.method().getName();
+
+            writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), card, ((Node) head.getEndNode()).getId(), nodeBCI, head);
+            while (__sons.advance()) {
+                AbstractBeginNode sonHead = __sons.getKey();
+                List<Block> sonPath = __sons.getValue();
+                if (sonHead instanceof LoopExitNode)
+                    writer.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                else {
+                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - asymmetric ending switch case)
+                    writer.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath); // write sons path to database
+                }
+            }
+            writer.printf("%n");
+        }
+
+        // Parse tail
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
+        List<Block> tail = new ArrayList<Block>();
+        while(__tails.advance()){
+            AbstractBeginNode csNode = __tails.getKey();
+            List<Block> csBlocks = __tails.getValue();
+            if(personalMerge(cs, (AbstractMergeNode)csNode))  // A path which follows the current control split; for the propagation to the older splits.
+                tail.addAll(csBlocks);
+            else if(splits.size()>0){
+                splits.peek().setTailNode(csNode);  // Propagate unused tails upward
+                splits.peek().setTailBlocks(csBlocks);
+            }
+        }
+
+        // Create a full cs path
+        newPath = new ArrayList<>(cs.getPathToBlock());
+        newPath.add(head);
+        __sons = cs.getSons();
+        while(__sons.advance()) {
+            AbstractBeginNode sonHead = __sons.getKey();
+            List<Block> sonPath = __sons.getValue();
+            newPath.addAll(sonPath);
+        }
+        if(tail.size()>0)
+            newPath.addAll(tail);
+
+        return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
+    }
+
+    private static EconomicMap<AbstractBeginNode, List<Block>> __sonsConcat(ControlSplit cs){
+        // Concatenate sons of switch control split
+        Block head = cs.getBlock();
+        int card = head.getSuccessorCount();
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
 
-        // In the case of the switch control split: eventually do a sons concatenation and fill up pinned path for every son
         EconomicMap<AbstractBeginNode, List<Block>> __fulltails = cs.getTailsMap();  // cs tails map
         EconomicMap<AbstractBeginNode, List<Block>> __fullsons = cs.getSonsMap();  // cs sons map
         EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths in case of the switch control splits
+
         if(card>2) {  // switch cs case
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
@@ -449,54 +507,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             if(tmp.size()==1 && !nullexists)
                 pinnedPaths.clear();
         }
-
-        // writeout
-        __sons = cs.getSons();
-        synchronized (writer) {
-            long graphId = graph.graphId();
-            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : ((Node) head.getEndNode()).getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
-            String name = graph.method().getName();
-
-            writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, ((Node) head.getEndNode()).toString(), card, ((Node) head.getEndNode()).getId(), nodeBCI, head);
-            while (__sons.advance()) {
-                AbstractBeginNode sonHead = __sons.getKey();
-                List<Block> sonPath = __sons.getValue();
-                if (sonHead instanceof LoopExitNode)
-                    writer.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
-                else {
-                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - asymmetric ending switch case)
-                    writer.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath); // write sons path to database
-                }
-            }
-            writer.printf("%n");
-        }
-
-        // Parse tail
-        List<Block> tail = new ArrayList<Block>();
-        while(__tails.advance()){
-            AbstractBeginNode csNode = __tails.getKey();
-            List<Block> csBlocks = __tails.getValue();
-            if(personalMerge(cs, (AbstractMergeNode)csNode))  // A path which follows the current control split; for the propagation to the older splits.
-                tail.addAll(csBlocks);
-            else if(splits.size()>0){
-                splits.peek().setTailNode(csNode);  // Propagate unused tails upward
-                splits.peek().setTailBlocks(csBlocks);
-            }
-        }
-
-        // Create a full cs path
-        newPath = new ArrayList<>(cs.getPathToBlock());
-        newPath.add(head);
-        __sons = cs.getSons();
-        while(__sons.advance()) {
-            AbstractBeginNode sonHead = __sons.getKey();
-            List<Block> sonPath = __sons.getValue();
-            newPath.addAll(sonPath);
-        }
-        if(tail.size()>0)
-            newPath.addAll(tail);
-
-        return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
+        return pinnedPaths;
     }
 
     private static EconomicSet<AbstractMergeNode> __pathReachable(List<Block> path) {
