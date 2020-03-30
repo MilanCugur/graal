@@ -413,33 +413,30 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                 pinnedPaths.put(sonHead, null);  // initially put null value
 
-                if (sonHead instanceof LoopExitNode)  // cut paths on the loop exit node
-                    continue;
-                else {
-                    List<Block> newMeat = new ArrayList<>(sonPath);
-                    while (true) {  // traverse following sons path
-                        EconomicSet<AbstractMergeNode> sonEnds = __pathReachable(newMeat);
-                        newMeat.clear();
-                        if (sonEnds.isEmpty())
-                            break;
-                        for(AbstractMergeNode nextNode : sonEnds) {
-                            if (__fulltails.containsKey(nextNode)) {
-                                // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
-                                List<Block> tailBody = __fulltails.get(nextNode);
-                                if(__hasInnerExit(tailBody, __fulltails.getKeys())){  // Inner sub-path
-                                    newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
-                                }else{
-                                    pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
-                                    break;
-                                }
+                List<Block> newMeat = new ArrayList<>(sonPath);
+                while (true) {  // traverse following sons path
+                    EconomicSet<AbstractMergeNode> sonEnds = __pathReachable(newMeat);
+                    newMeat.clear();
+                    if (sonEnds.isEmpty())
+                        break;
+                    for(AbstractMergeNode nextNode : sonEnds) {
+                        if (__fulltails.containsKey(nextNode)) {
+                            // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
+                            List<Block> tailBody = __fulltails.get(nextNode);
+                            if(__hasInnerExit(tailBody, __fulltails.getKeys())){  // Inner sub-path
+                                newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                            }else{
+                                pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
+                                break;
                             }
                         }
-                        if(newMeat.size()==0 || pinnedPaths.get(sonHead)!=null) {
-                            break;
-                        }else
-                            sonPath.addAll(new ArrayList<>(newMeat));
                     }
+                    if(newMeat.size()==0 || pinnedPaths.get(sonHead)!=null) {
+                        break;
+                    }else
+                        sonPath.addAll(new ArrayList<>(newMeat));
                 }
+
                 __fullsons.put(sonHead, sonPath);
             }
             EconomicSet<List<Block>> tmp = EconomicSet.create(Equivalence.DEFAULT);  // If all sons have the same pinned path, don't use it at all
