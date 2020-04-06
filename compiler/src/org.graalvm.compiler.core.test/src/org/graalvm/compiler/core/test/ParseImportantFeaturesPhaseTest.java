@@ -203,6 +203,13 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
     }
 
     @Test
+    public void test23(){
+        String groundTruth = "25|If-B3-[B4][null]-[x(22|LoopExit)][null]\n" +
+                             "7|If-B0-[B1][null]-[B2, B3, B4, B5][null]\n";
+        testCodeSnippet("example_ftest23", groundTruth);
+    }
+
+    @Test
     public void test5(){
         String groundTruth = "4|IntegerSwitch-B0-[B1][null]-[B2][null]-[B3][null]\n";
         testCodeSnippet("example_ftest5", groundTruth);
@@ -341,6 +348,21 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         System.console();
         return;
     }
+
+    private static void example_ftest23(int a, int b){
+        //Write your function here
+        if(a<b)
+            return;
+        System.out.println("Begin");
+        int i = 0;
+        while(i<a){
+            System.out.println(i);
+            i += 1;
+        }
+        System.out.println("End");
+        return;
+    }
+
 
     // SWITCHS
     private static void example_ftest5(int a, int b){
