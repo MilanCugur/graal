@@ -179,6 +179,12 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
     }
 
     @Test
+    public void test10(){
+        String groundTruth = "8|If-B0-[B1][null]-[B2][null]\n";
+        testCodeSnippet("example_ftest10", groundTruth);
+    }
+
+    @Test
     public void test7(){
         String groundTruth = "14|If-B1-[B2][null]-[x(11|LoopExit)][null]\n";
         testCodeSnippet("example_ftest7", groundTruth);
@@ -290,6 +296,16 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                 System.console();
             } // not join together
         }
+        return;
+    }
+
+    private static void example_ftest10(int a) throws Exception{
+        //Write your function here
+        if(a>100)
+            throw new Exception();
+        System.console();
+        System.console();
+
         return;
     }
 
