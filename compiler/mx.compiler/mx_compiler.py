@@ -594,7 +594,7 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
             _nodeType = re.split("\|", elem['Node Description'])[1]
             _nodeBCI = elem['Node BCI']
             if verbose:
-                print('Validating Control Split: {:7s} {:7s} {:7s} {:30s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
+                print('Validating Control Split: {:17s} {:7s} {:7s} {:36s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
 
             orign = None
             if (_source, _head, _nodeId, _nodeType) in check_data:
