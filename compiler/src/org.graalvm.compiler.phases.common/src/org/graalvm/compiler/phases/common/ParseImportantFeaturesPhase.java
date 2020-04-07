@@ -74,42 +74,76 @@ class ControlSplit {
         this.block = block;
         this.pathToBlock = new ArrayList<>(path);
         this.sonsBlocks = EconomicMap.create(Equivalence.DEFAULT);
-        this.sonsHeads =  EconomicSet.create(Equivalence.DEFAULT);
-        for(Block son: block.getSuccessors())
+        this.sonsHeads = EconomicSet.create(Equivalence.DEFAULT);
+        for (Block son : block.getSuccessors())
             this.sonsHeads.add(son.getBeginNode());
         this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
         this.tailBlocks = EconomicMap.create(Equivalence.DEFAULT);
     }
 
-    public Block getBlock(){ return this.block; }
+    public Block getBlock() {
+        return this.block;
+    }
 
-    public List<Block> getPathToBlock() { return pathToBlock; }
+    public List<Block> getPathToBlock() {
+        return pathToBlock;
+    }
 
     // Sons operations
-    public Boolean finished(){ return this.sonsHeads.isEmpty(); }
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() { return this.sonsBlocks.getEntries(); }  // main getter
-    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap(){ return this.sonsBlocks; }  // additional getter
-    public Iterable<List<Block>> getSonsPaths(){ return this.sonsBlocks.getValues(); }  // auxiliary getter
-    public void addASon(List<Block> sonsPath){  // add
+    public Boolean finished() {
+        return this.sonsHeads.isEmpty();
+    }
+
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() {
+        return this.sonsBlocks.getEntries();
+    }  // main getter
+
+    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {
+        return this.sonsBlocks;
+    }  // additional getter
+
+    public Iterable<List<Block>> getSonsPaths() {
+        return this.sonsBlocks.getValues();
+    }  // auxiliary getter
+
+    public void addASon(List<Block> sonsPath) {  // add
         AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
         assert this.sonsHeads.contains(sonsHead) : "ParseImportantFeaturesError: Adding invalid son.";
         assert !this.sonsBlocks.containsKey(sonsHead) : "ParseImportantFeaturesError: Adding same son twice.";
         this.sonsBlocks.put(sonsHead, new ArrayList<>(sonsPath));
         this.sonsHeads.remove(sonsHead);
     }
-    public boolean areInSons(AbstractBeginNode node){ return this.sonsHeads.contains(node); }  // check
+
+    public boolean areInSons(AbstractBeginNode node) {
+        return this.sonsHeads.contains(node);
+    }  // check
 
     // Tails operations
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails(){ return this.tailBlocks.getEntries(); } // main getter
-    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap(){ return this.tailBlocks; }  // additional getter
-    public Iterable<List<Block>> getTailsPaths(){ return this.tailBlocks.getValues(); }  // auxiliary getter
-    public void setTailNode(AbstractBeginNode tailNode) { this.tailHeads.add(tailNode); }  // add
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails() {
+        return this.tailBlocks.getEntries();
+    } // main getter
+
+    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {
+        return this.tailBlocks;
+    }  // additional getter
+
+    public Iterable<List<Block>> getTailsPaths() {
+        return this.tailBlocks.getValues();
+    }  // auxiliary getter
+
+    public void setTailNode(AbstractBeginNode tailNode) {
+        this.tailHeads.add(tailNode);
+    }  // add
+
     public void setTailBlocks(List<Block> tailBlocks) {  // add
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
         assert this.tailHeads.contains(node) : "ParseImportantFeaturesError: set tail blocks on wrong tail.";
-        this.tailBlocks.put(node, new ArrayList<Block>(tailBlocks));
+        this.tailBlocks.put(node, new ArrayList<>(tailBlocks));
     }
-    public boolean areInTails(AbstractBeginNode node){ return this.tailHeads.contains(node); }  // check
+
+    public boolean areInTails(AbstractBeginNode node) {
+        return this.tailHeads.contains(node);
+    }  // check
 }
 
 /* Graph traversal intermediate state representation */
@@ -119,17 +153,25 @@ class TraversalState {
     public TraversalState() {
         this.path = new ArrayList<>();
     }
-    public TraversalState(List<Block> path){
-        if(path==null)
+
+    public TraversalState(List<Block> path) {
+        if (path == null)
             this.path = new ArrayList<>();
         else
             this.path = new ArrayList<>(path);
     }
 
-    public List<Block> getPath() { return this.path; }
+    public List<Block> getPath() {
+        return this.path;
+    }
 
-    public void addBlockToPath(Block block) { this.path.add(block); }
-    public void clearPath(){ this.path.clear(); }
+    public void addBlockToPath(Block block) {
+        this.path.add(block);
+    }
+
+    public void clearPath() {
+        this.path.clear();
+    }
 }
 
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
@@ -168,7 +210,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     @Override
     protected void run(StructuredGraph graph, CoreProviders context) {
-        if(methodRegex!=null) {  // If Method Filter is not specified, parse all functions, otherwise parse only desired function[s]
+        if (methodRegex != null) {  // If Method Filter is not specified, parse all functions, otherwise parse only desired function[s]
             MethodFilter mf = MethodFilter.parse(methodRegex);
             if (!mf.matches(graph.method()))  // If Method Filter is specified, parse only target functions
                 return;
@@ -254,14 +296,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                         // If on top of the stack are switch control split which is not fully finished
                         // Should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part or simply propagate it upwards
-                        if(splits.peek().getBlock().getSuccessorCount()>2){  // Switch node case
+                        if (splits.peek().getBlock().getSuccessorCount() > 2) {  // Switch node case
                             EconomicSet<AbstractMergeNode> reachable = EconomicSet.create(Equivalence.DEFAULT);
-                            for(List<Block> son : splits.peek().getSonsPaths()){
+                            for (List<Block> son : splits.peek().getSonsPaths()) {
                                 reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
                             }
-                            for(List<Block> tail : splits.peek().getTailsPaths())
-                                reachable.remove((AbstractMergeNode)tail.get(0).getBeginNode());  // Remove already reached merge nodes
-                            if(reachable.size()>0) {  // Control split is currently incomplete
+                            for (List<Block> tail : splits.peek().getTailsPaths())
+                                reachable.remove((AbstractMergeNode) tail.get(0).getBeginNode());  // Remove already reached merge nodes
+                            if (reachable.size() > 0) {  // Control split is currently incomplete
                                 splits.peek().setTailNode(merge.getBeginNode());  // Add next path as a tail, if its connected it will be kept, otherwise will be propagated upwards
                                 return new TraversalState();
                             }
@@ -272,7 +314,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                         // Try to eventually add a son
                         if (splits.size() > 0) {
-                            ControlSplit fatherCS = null, tailCS = null;
+                            ControlSplit fatherCS, tailCS;
                             fatherCS = findControlSplitFather(splits, newPath);
                             tailCS = findTailFather(splits, newPath);
                             if (fatherCS != null) {
@@ -333,7 +375,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
             // Try to eventually add a son
             if (splits.size() > 0) {
-                ControlSplit fatherCS = null, tailCS = null;
+                ControlSplit fatherCS, tailCS;
                 fatherCS = findControlSplitFather(splits, newPath);
                 tailCS = findTailFather(splits, newPath);
                 if (fatherCS != null)
@@ -346,26 +388,26 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
     }
 
-    private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge){  // Are merge block (block starting with AbstractMergeNode merge) fully owned by Control split cs
+    private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge) {  // Are merge block (block starting with AbstractMergeNode merge) fully owned by Control split cs
         Iterable<List<Block>> sons = cs.getSonsPaths();
         EconomicSet<AbstractEndNode> myEnds = EconomicSet.create(Equivalence.IDENTITY);
-        for(List<Block> son: sons){
-            for(Block sblock : son){
-                if(sblock.getEndNode() instanceof AbstractEndNode){  // For merge of 2nd and higher order
-                    myEnds.add((AbstractEndNode)sblock.getEndNode());
+        for (List<Block> son : sons) {
+            for (Block sblock : son) {
+                if (sblock.getEndNode() instanceof AbstractEndNode) {  // For merge of 2nd and higher order
+                    myEnds.add((AbstractEndNode) sblock.getEndNode());
                 }
             }
         }
-        for (AbstractEndNode forwardEnd : merge.forwardEnds()){
-            if(!myEnds.contains(forwardEnd)){
+        for (AbstractEndNode forwardEnd : merge.forwardEnds()) {
+            if (!myEnds.contains(forwardEnd)) {
                 return false;
             }
         }
         return true;
     }
 
-    private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path){
-        if(path==null) return null;
+    private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path) {
+        if (path == null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
             if (splits.get(i).areInTails(path.get(0).getBeginNode()))
@@ -377,8 +419,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             return splits.get(i);
     }
 
-    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, List<Block> path){
-        if(path==null) return null;
+    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, List<Block> path) {
+        if (path == null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
             if (splits.get(i).areInSons(path.get(0).getBeginNode()))
@@ -390,10 +432,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             return splits.get(i);
     }
 
-    private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph){
+    private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph) {
         // Pop element from the top of a stack and write it out to the database; return integrated path
-        assert splits.size()>0 && splits.peek().finished() :  "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
-        List<Block> newPath = null;
+        assert splits.size() > 0 && splits.peek().finished() : "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
+        List<Block> newPath;
 
         // pop finished cs
         ControlSplit cs = splits.pop();
@@ -426,13 +468,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // Parse tail
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
-        List<Block> tail = new ArrayList<Block>();
-        while(__tails.advance()){
+        List<Block> tail = new ArrayList<>();
+        while (__tails.advance()) {
             AbstractBeginNode csNode = __tails.getKey();
             List<Block> csBlocks = __tails.getValue();
-            if(personalMerge(cs, (AbstractMergeNode)csNode))  // A path which follows the current control split; for the propagation to the older splits.
+            if (personalMerge(cs, (AbstractMergeNode) csNode))  // A path which follows the current control split; for the propagation to the older splits.
                 tail.addAll(csBlocks);
-            else if(splits.size()>0){
+            else if (splits.size() > 0) {
                 splits.peek().setTailNode(csNode);  // Propagate unused tails upward
                 splits.peek().setTailBlocks(csBlocks);
             }
@@ -442,29 +484,27 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         newPath = new ArrayList<>(cs.getPathToBlock());
         newPath.add(head);
         __sons = cs.getSons();
-        while(__sons.advance()) {
-            AbstractBeginNode sonHead = __sons.getKey();
+        while (__sons.advance()) {
             List<Block> sonPath = __sons.getValue();
             newPath.addAll(sonPath);
         }
-        if(tail.size()>0)
+        if (tail.size() > 0)
             newPath.addAll(tail);
 
         return newPath.stream().distinct().collect(Collectors.toList());  // remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
     }
 
-    private static EconomicMap<AbstractBeginNode, List<Block>> __sonsConcat(ControlSplit cs){
+    private static EconomicMap<AbstractBeginNode, List<Block>> __sonsConcat(ControlSplit cs) {
         // Concatenate sons of switch control split
         Block head = cs.getBlock();
         int card = head.getSuccessorCount();
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
 
         EconomicMap<AbstractBeginNode, List<Block>> __fulltails = cs.getTailsMap();  // cs tails map
         EconomicMap<AbstractBeginNode, List<Block>> __fullsons = cs.getSonsMap();  // cs sons map
         EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths in case of the switch control splits
 
-        if(card>2) {  // switch cs case
+        if (card > 2) {  // switch cs case
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
@@ -477,21 +517,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     newMeat.clear();
                     if (sonEnds.isEmpty())
                         break;
-                    for(AbstractMergeNode nextNode : sonEnds) {
+                    for (AbstractMergeNode nextNode : sonEnds) {
                         if (__fulltails.containsKey(nextNode)) {
                             // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
                             List<Block> tailBody = __fulltails.get(nextNode);
-                            if(__hasInnerExit(tailBody, __fulltails.getKeys())){  // Inner sub-path
+                            if (__hasInnerExit(tailBody, __fulltails.getKeys())) {  // Inner sub-path
                                 newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
-                            }else{
+                            } else {
                                 pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
                                 break;
                             }
                         }
                     }
-                    if(newMeat.size()==0 || pinnedPaths.get(sonHead)!=null) {
+                    if (newMeat.size() == 0 || pinnedPaths.get(sonHead) != null) {
                         break;
-                    }else
+                    } else
                         sonPath.addAll(new ArrayList<>(newMeat));
                 }
 
@@ -499,12 +539,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
             EconomicSet<List<Block>> tmp = EconomicSet.create(Equivalence.DEFAULT);  // If all sons have the same pinned path, don't use it at all
             boolean nullexists = false;
-            for(List<Block> elem : pinnedPaths.getValues())
-                if(elem != null)
+            for (List<Block> elem : pinnedPaths.getValues())
+                if (elem != null)
                     tmp.add(elem);
                 else
                     nullexists = true;
-            if(tmp.size()==1 && !nullexists)
+            if (tmp.size() == 1 && !nullexists)
                 pinnedPaths.clear();
         }
         return pinnedPaths;
@@ -514,23 +554,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Return set of Merge nodes which are reachable by the current path
         EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
         for (Block b : path) {
-            if (b.getEndNode() instanceof  AbstractEndNode) {
+            if (b.getEndNode() instanceof AbstractEndNode) {
                 Block succ = b.getFirstSuccessor();
                 if (succ.getBeginNode() instanceof AbstractMergeNode)
-                    reach.add((AbstractMergeNode)succ.getBeginNode());
+                    reach.add((AbstractMergeNode) succ.getBeginNode());
             }
         }
-        for(Block b : path)
-            if(b.getBeginNode() instanceof AbstractMergeNode)
-                reach.remove((AbstractMergeNode)b.getBeginNode());  // return only real-reachable
+        for (Block b : path)
+            if (b.getBeginNode() instanceof AbstractMergeNode)
+                reach.remove((AbstractMergeNode) b.getBeginNode());  // return only real-reachable
         return reach;
     }
 
-    private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads){
+    private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads) {
         // Return true if the path has reachable merge nodes in the set of the tailHeads nodes
         EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
-        for(AbstractBeginNode thead : tailHeads)
-            if(reach.contains((AbstractMergeNode)thead))
+        for (AbstractBeginNode thead : tailHeads)
+            if (reach.contains((AbstractMergeNode) thead))
                 return true;
         return false;
     }
