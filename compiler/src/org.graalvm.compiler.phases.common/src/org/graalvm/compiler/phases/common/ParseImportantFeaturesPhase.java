@@ -38,12 +38,12 @@ import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
-import org.graalvm.compiler.core.common.cfg.BlockMap;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
-import org.graalvm.compiler.graph.NodeMap;
+import org.graalvm.compiler.nodeinfo.NodeCycles;
+import org.graalvm.compiler.nodeinfo.NodeSize;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
@@ -94,17 +94,17 @@ class ControlSplit {
         return this.sonsHeads.isEmpty();
     }
 
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() {
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() {  // main getter
         return this.sonsBlocks.getEntries();
-    }  // main getter
+    }
 
-    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {
+    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {  // additional getter
         return this.sonsBlocks;
-    }  // additional getter
+    }
 
-    public Iterable<List<Block>> getSonsPaths() {
+    public Iterable<List<Block>> getSonsPaths() {  // auxiliary getter
         return this.sonsBlocks.getValues();
-    }  // auxiliary getter
+    }
 
     public void addASon(List<Block> sonsPath) {  // add
         AbstractBeginNode sonsHead = sonsPath.get(0).getBeginNode();
@@ -114,26 +114,26 @@ class ControlSplit {
         this.sonsHeads.remove(sonsHead);
     }
 
-    public boolean areInSons(AbstractBeginNode node) {
+    public boolean areInSons(AbstractBeginNode node) {  // check
         return this.sonsHeads.contains(node);
-    }  // check
+    }
 
     // Tails operations
-    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails() {
+    public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getTails() { // main getter
         return this.tailBlocks.getEntries();
-    } // main getter
+    }
 
-    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {
+    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {  // additional getter
         return this.tailBlocks;
-    }  // additional getter
+    }
 
-    public Iterable<List<Block>> getTailsPaths() {
+    public Iterable<List<Block>> getTailsPaths() {  // auxiliary getter
         return this.tailBlocks.getValues();
-    }  // auxiliary getter
+    }
 
-    public void setTailNode(AbstractBeginNode tailNode) {
+    public void setTailNode(AbstractBeginNode tailNode) {  // add
         this.tailHeads.add(tailNode);
-    }  // add
+    }
 
     public void setTailBlocks(List<Block> tailBlocks) {  // add
         AbstractBeginNode node = tailBlocks.get(0).getBeginNode();
@@ -180,11 +180,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     private String methodRegex;
 
     private static PrintWriter writer;
+    private static PrintWriter writerAttr;
 
     static { // Static writer used for dumping important features to database (currently .csv file)
         try {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
             writer.printf("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head%n");
+            writerAttr = new PrintWriter(new FileOutputStream(new File("./importantAttributes.csv")), true, StandardCharsets.US_ASCII);
+            writerAttr.printf("Graph Id, Source Function, Node Description, head%n");
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
@@ -218,16 +221,20 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // Block and nodes integration
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-        BlockMap<List<Node>> blockToNode = null;
-        NodeMap<Block> nodeToBlock = null;
         try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
             SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.EARLIEST_WITH_GUARD_ORDER, cfg);  // Do scheduling because of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
-        StructuredGraph.ScheduleResult r = graph.getLastSchedule();
-        blockToNode = r.getBlockToNodesMap();
-        nodeToBlock = r.getNodeToBlockMap();
+        StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
+
+        // temporary writeout
+        for(Block b : schedule.getCFG().getBlocks())
+            System.err.println(b+": "+schedule.nodesFor(b));
+        System.err.println("\n\n");
+        for(Node node : graph.getNodes())
+            System.err.println(node+": "+(schedule.getNodeToBlockMap().get(node)!=null? schedule.getNodeToBlockMap().get(node).toString():"null"));
+        // end of temporary writeout
 
         // Graph traversal algorithm
 
@@ -310,7 +317,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         }
 
                         // My new path
-                        List<Block> newPath = writeOutFromStack(splits, graph);
+                        List<Block> newPath = writeOutFromStack(splits, graph, schedule);
 
                         // Try to eventually add a son
                         if (splits.size() > 0) {
@@ -366,12 +373,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         };
 
-        ReentrantBlockIterator.apply(CSClosure, r.getCFG().getStartBlock());
+        ReentrantBlockIterator.apply(CSClosure, schedule.getCFG().getStartBlock());
 
         // Flush [finished] Control Splits from the stack as the end of the iteration process
         while (splits.size() > 0) {
             // My new path
-            List<Block> newPath = writeOutFromStack(splits, graph);
+            List<Block> newPath = writeOutFromStack(splits, graph, schedule);
 
             // Try to eventually add a son
             if (splits.size() > 0) {
@@ -432,7 +439,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             return splits.get(i);
     }
 
-    private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph) {
+    private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule) {
         // Pop element from the top of a stack and write it out to the database; return integrated path
         assert splits.size() > 0 && splits.peek().finished() : "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
         List<Block> newPath;
@@ -464,6 +471,30 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
             }
             writer.printf("%n");
+        }
+
+        // Write out important attributes; due to test compatibility maintain two versions
+        __sons = cs.getSons();
+        synchronized (writerAttr) {
+            long graphId = graph.graphId();
+            String name = graph.method().getName();
+
+            writerAttr.printf("%d,\"%s\",%s,%s", graphId, name, ((Node) head.getEndNode()).toString(), head);
+            while (__sons.advance()) {
+                AbstractBeginNode sonHead = __sons.getKey();
+                List<Block> sonPath = __sons.getValue();
+                if (sonHead instanceof LoopExitNode)
+                    writerAttr.printf(",\"[x(%s)][null]\"; IRNodeCount: [0][0]; EstimatedCPUCycles: [0][0]; EstimatedAssemblySize: [0][0]", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                else {
+                    List<Block> pinnedPath = pinnedPaths.get(sonHead);
+                    writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
+                    writerAttr.printf("; IRFixedNodeCount: [%d][%d]", getIRFixedNodeCount(sonPath), getIRFixedNodeCount(pinnedPath));
+                    writerAttr.printf("; IRNodeCount: [%d][%d]", getIRNodeCount(sonPath, schedule), getIRNodeCount(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedCPUCycles: [%d][%d]", getEstimatedNodeCycles(sonPath, schedule), getEstimatedNodeCycles(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedAssemblySize: [%d][%d]", getEstimatedAssemblyNodeSize(sonPath, schedule), getEstimatedAssemblyNodeSize(pinnedPath, schedule));
+                }
+            }
+            writerAttr.printf("%n");
         }
 
         // Parse tail
@@ -574,4 +605,99 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 return true;
         return false;
     }
+
+    /* Util functions that parse important attributes of blocks */
+    private static int getIRFixedNodeCount(List<Block> path) {
+        if (path == null)
+            return 0;
+        int nnodes = 0;
+        for (Block b : path)
+            for (Node node : b.getNodes())
+                nnodes += 1;
+        return nnodes;
+    }
+
+    private static int getIRNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null)
+            return 0;
+        int nnodes = 0;
+        for (Block b : path)
+            nnodes += schedule.nodesFor(b).size();
+        return nnodes;
+    }
+
+    private static int getEstimatedNodeCycles(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null)
+            return 0;
+        int ncycles = 0;
+        for (Block b : path)
+            for(Node n : schedule.nodesFor(b))
+                ncycles += __castNodeCycles(n.estimatedNodeCycles());
+        return ncycles;
+    }
+
+    private static int __castNodeCycles(NodeCycles ncyc){
+        if(ncyc==NodeCycles.CYCLES_1)
+            return 1;
+        else if(ncyc==NodeCycles.CYCLES_2)
+            return 2;
+        else if(ncyc==NodeCycles.CYCLES_4)
+            return 4;
+        else if(ncyc==NodeCycles.CYCLES_8)
+            return 8;
+        else if(ncyc==NodeCycles.CYCLES_16)
+            return 16;
+        else if(ncyc==NodeCycles.CYCLES_32)
+            return 32;
+        else if(ncyc==NodeCycles.CYCLES_64)
+            return 64;
+        else if(ncyc==NodeCycles.CYCLES_128)
+            return 128;
+        else if(ncyc==NodeCycles.CYCLES_256)
+            return 256;
+        else if(ncyc==NodeCycles.CYCLES_512)
+            return 512;
+        else if(ncyc==NodeCycles.CYCLES_1024)
+            return 1024;
+        else
+            return 0;  // CYCLES_UNSET, CYCLES_UNKNOWN, CYCLES_IGNORED, CYCLES_0
+    }
+
+    private static int getEstimatedAssemblyNodeSize(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null)
+            return 0;
+        int nsize = 0;
+        for (Block b : path)
+            for(Node n : schedule.nodesFor(b))
+                nsize += __castNodeSize(n.estimatedNodeSize());
+        return nsize;
+    }
+
+    private static int __castNodeSize(NodeSize nsiz){
+        if(nsiz==NodeSize.SIZE_1)
+            return 1;
+        else if(nsiz==NodeSize.SIZE_2)
+            return 2;
+        else if(nsiz==NodeSize.SIZE_4)
+            return 4;
+        else if(nsiz==NodeSize.SIZE_8)
+            return 8;
+        else if(nsiz==NodeSize.SIZE_16)
+            return 16;
+        else if(nsiz==NodeSize.SIZE_32)
+            return 32;
+        else if(nsiz==NodeSize.SIZE_64)
+            return 64;
+        else if(nsiz==NodeSize.SIZE_128)
+            return 128;
+        else if(nsiz==NodeSize.SIZE_256)
+            return 256;
+        else if(nsiz==NodeSize.SIZE_512)
+            return 512;
+        else if(nsiz==NodeSize.SIZE_1024)
+            return 1024;
+        else
+            return 0;  // SIZE_UNSET, SIZE_UNKNOWN, SIZE_IGNORED, SIZE_0
+    }
+
 }
