@@ -229,11 +229,15 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
 
         // temporary writeout
-        for(Block b : schedule.getCFG().getBlocks())
-            System.err.println(b+": "+schedule.nodesFor(b));
+        for (Block b : schedule.getCFG().getBlocks())
+            System.err.println(b + ": " + schedule.nodesFor(b) + "[" + b.getLoopDepth() + "]");
         System.err.println("\n\n");
-        for(Node node : graph.getNodes())
-            System.err.println(node+": "+(schedule.getNodeToBlockMap().get(node)!=null? schedule.getNodeToBlockMap().get(node).toString():"null"));
+        for (Node node : graph.getNodes()) {
+            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null") + " cyc: " + __castNodeCycles(node.estimatedNodeCycles()) + " ass: " + __castNodeSize(node.estimatedNodeSize()));
+            if (node instanceof InvokeNode) {
+                System.err.println("CALL_TARGET: [" + ((InvokeNode) node).callTarget().targetName() + "]");
+            }
+        }
         // end of temporary writeout
 
         // Graph traversal algorithm
@@ -483,15 +487,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
-                if (sonHead instanceof LoopExitNode)
-                    writerAttr.printf(",\"[x(%s)][null]\"; IRNodeCount: [0][0]; EstimatedCPUCycles: [0][0]; EstimatedAssemblySize: [0][0]", sonHead.toString());  // x is an abbreviation for LoopExitNode
-                else {
+                if (sonHead instanceof LoopExitNode) {
+                    writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                    writerAttr.printf("; IRFixedNodeCount: [0][0]");
+                    writerAttr.printf("; IRNodeCount: [0][0]");
+                    writerAttr.printf("; EstimatedCPUCycles: [0][0]");
+                    writerAttr.printf("; EstimatedAssemblySize: [0][0]");
+                    writerAttr.printf("; LoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
+                    writerAttr.printf("; MaxPathLoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
+                    writerAttr.printf("; NCond: [0][0]");
+                    writerAttr.printf("; NInvoke: [0][0]");
+                    writerAttr.printf("; NExceptions: [0][0]");
+                } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
                     writerAttr.printf("; IRFixedNodeCount: [%d][%d]", getIRFixedNodeCount(sonPath), getIRFixedNodeCount(pinnedPath));
                     writerAttr.printf("; IRNodeCount: [%d][%d]", getIRNodeCount(sonPath, schedule), getIRNodeCount(pinnedPath, schedule));
                     writerAttr.printf("; EstimatedCPUCycles: [%d][%d]", getEstimatedNodeCycles(sonPath, schedule), getEstimatedNodeCycles(pinnedPath, schedule));
                     writerAttr.printf("; EstimatedAssemblySize: [%d][%d]", getEstimatedAssemblyNodeSize(sonPath, schedule), getEstimatedAssemblyNodeSize(pinnedPath, schedule));
+                    writerAttr.printf("; LoopDepth: [%d][%d]", getLoopDepth(sonPath), getLoopDepth(pinnedPath));
+                    writerAttr.printf("; MaxPathLoopDepth: [%d][%d]", getMaxLoopDepth(sonPath), getMaxLoopDepth(pinnedPath));
+                    writerAttr.printf("; NCond: [%d][%d]", getNCond(sonPath), getNCond(pinnedPath));
+                    writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
+                    writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
                 }
             }
             writerAttr.printf("%n");
@@ -608,96 +626,170 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     /* Util functions that parse important attributes of blocks */
     private static int getIRFixedNodeCount(List<Block> path) {
-        if (path == null)
+        if (path == null) {
             return 0;
+        }
         int nnodes = 0;
-        for (Block b : path)
-            for (Node node : b.getNodes())
+        for (Block b : path) {
+            for (Node node : b.getNodes()) {
                 nnodes += 1;
+            }
+        }
         return nnodes;
     }
 
     private static int getIRNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
-        if (path == null)
+        if (path == null) {
             return 0;
+        }
         int nnodes = 0;
-        for (Block b : path)
+        for (Block b : path) {
             nnodes += schedule.nodesFor(b).size();
+        }
         return nnodes;
     }
 
     private static int getEstimatedNodeCycles(List<Block> path, StructuredGraph.ScheduleResult schedule) {
-        if (path == null)
+        if (path == null) {
             return 0;
+        }
         int ncycles = 0;
-        for (Block b : path)
-            for(Node n : schedule.nodesFor(b))
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
                 ncycles += __castNodeCycles(n.estimatedNodeCycles());
+            }
+        }
         return ncycles;
     }
 
-    private static int __castNodeCycles(NodeCycles ncyc){
-        if(ncyc==NodeCycles.CYCLES_1)
+    private static int __castNodeCycles(NodeCycles ncyc) {
+        if (ncyc == NodeCycles.CYCLES_1) {
             return 1;
-        else if(ncyc==NodeCycles.CYCLES_2)
+        } else if (ncyc == NodeCycles.CYCLES_2) {
             return 2;
-        else if(ncyc==NodeCycles.CYCLES_4)
+        } else if (ncyc == NodeCycles.CYCLES_4) {
             return 4;
-        else if(ncyc==NodeCycles.CYCLES_8)
+        } else if (ncyc == NodeCycles.CYCLES_8) {
             return 8;
-        else if(ncyc==NodeCycles.CYCLES_16)
+        } else if (ncyc == NodeCycles.CYCLES_16) {
             return 16;
-        else if(ncyc==NodeCycles.CYCLES_32)
+        } else if (ncyc == NodeCycles.CYCLES_32) {
             return 32;
-        else if(ncyc==NodeCycles.CYCLES_64)
+        } else if (ncyc == NodeCycles.CYCLES_64) {
             return 64;
-        else if(ncyc==NodeCycles.CYCLES_128)
+        } else if (ncyc == NodeCycles.CYCLES_128) {
             return 128;
-        else if(ncyc==NodeCycles.CYCLES_256)
+        } else if (ncyc == NodeCycles.CYCLES_256) {
             return 256;
-        else if(ncyc==NodeCycles.CYCLES_512)
+        } else if (ncyc == NodeCycles.CYCLES_512) {
             return 512;
-        else if(ncyc==NodeCycles.CYCLES_1024)
+        } else if (ncyc == NodeCycles.CYCLES_1024) {
             return 1024;
-        else
+        } else {
             return 0;  // CYCLES_UNSET, CYCLES_UNKNOWN, CYCLES_IGNORED, CYCLES_0
+        }
     }
 
     private static int getEstimatedAssemblyNodeSize(List<Block> path, StructuredGraph.ScheduleResult schedule) {
-        if (path == null)
+        if (path == null) {
             return 0;
+        }
         int nsize = 0;
-        for (Block b : path)
-            for(Node n : schedule.nodesFor(b))
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
                 nsize += __castNodeSize(n.estimatedNodeSize());
+            }
+        }
         return nsize;
     }
 
-    private static int __castNodeSize(NodeSize nsiz){
-        if(nsiz==NodeSize.SIZE_1)
+    private static int __castNodeSize(NodeSize nsiz) {
+        if (nsiz == NodeSize.SIZE_1) {
             return 1;
-        else if(nsiz==NodeSize.SIZE_2)
+        } else if (nsiz == NodeSize.SIZE_2) {
             return 2;
-        else if(nsiz==NodeSize.SIZE_4)
+        } else if (nsiz == NodeSize.SIZE_4) {
             return 4;
-        else if(nsiz==NodeSize.SIZE_8)
+        } else if (nsiz == NodeSize.SIZE_8) {
             return 8;
-        else if(nsiz==NodeSize.SIZE_16)
+        } else if (nsiz == NodeSize.SIZE_16) {
             return 16;
-        else if(nsiz==NodeSize.SIZE_32)
+        } else if (nsiz == NodeSize.SIZE_32) {
             return 32;
-        else if(nsiz==NodeSize.SIZE_64)
+        } else if (nsiz == NodeSize.SIZE_64) {
             return 64;
-        else if(nsiz==NodeSize.SIZE_128)
+        } else if (nsiz == NodeSize.SIZE_128) {
             return 128;
-        else if(nsiz==NodeSize.SIZE_256)
+        } else if (nsiz == NodeSize.SIZE_256) {
             return 256;
-        else if(nsiz==NodeSize.SIZE_512)
+        } else if (nsiz == NodeSize.SIZE_512) {
             return 512;
-        else if(nsiz==NodeSize.SIZE_1024)
+        } else if (nsiz == NodeSize.SIZE_1024) {
             return 1024;
-        else
+        } else {
             return 0;  // SIZE_UNSET, SIZE_UNKNOWN, SIZE_IGNORED, SIZE_0
+        }
     }
 
+    private static int getLoopDepth(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        return path.get(0).getLoopDepth();
+    }
+
+    private static int getMaxLoopDepth(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int maxdepth = 0;
+        for (Block b : path) {
+            if (b.getLoopDepth() > maxdepth) {
+                maxdepth = b.getLoopDepth();
+            }
+        }
+        return maxdepth;
+    }
+
+    private static int getNCond(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ncond = 0;
+        for (Block b : path) {
+            if (b.getEndNode() instanceof ControlSplitNode) {
+                ncond += 1;
+            }
+        }
+        return ncond;
+    }
+
+    private static int getNInvoke(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ninv = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof InvokeNode)
+                    ninv += 1;
+            }
+        }
+        return ninv;
+    }
+
+    private static int genNExceptions(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nexc = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace"))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>"
+                    nexc += 1;
+                }
+            }
+        }
+        return nexc;
+    }
 }
