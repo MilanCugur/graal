@@ -30,6 +30,7 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Stack;
 import java.util.stream.Collectors;
@@ -45,8 +46,12 @@ import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
 import org.graalvm.compiler.nodeinfo.NodeSize;
 import org.graalvm.compiler.nodes.*;
+import org.graalvm.compiler.nodes.calc.BinaryNode;
+import org.graalvm.compiler.nodes.calc.TernaryNode;
+import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionKey;
@@ -234,8 +239,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         System.err.println("\n\n");
         for (Node node : graph.getNodes()) {
             System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null") + " cyc: " + __castNodeCycles(node.estimatedNodeCycles()) + " ass: " + __castNodeSize(node.estimatedNodeSize()));
-            if (node instanceof InvokeNode) {
-                System.err.println("CALL_TARGET: [" + ((InvokeNode) node).callTarget().targetName() + "]");
+            //if (node instanceof InvokeNode) {
+            //    System.err.println("CALL_TARGET: [" + ((InvokeNode) node).callTarget().targetName() + "]");
+            //}
+            System.err.println("INPUTS: "+node.inputs().toString());
+            if(node instanceof AbstractMergeNode){
+                System.err.println("ABMN: PHIS"+ Arrays.toString(((AbstractMergeNode) node).phis().snapshot().toArray()));
+                System.err.println("ABMN: VALUE PHIS"+Arrays.toString(((AbstractMergeNode) node).valuePhis().snapshot().toArray()));
+                System.err.println("ABMN: MEMORY PHIS"+Arrays.toString(((AbstractMergeNode) node).memoryPhis().snapshot().toArray()));
             }
         }
         // end of temporary writeout
@@ -483,7 +494,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             long graphId = graph.graphId();
             String name = graph.method().getName();
 
-            writerAttr.printf("%d,\"%s\",%s,%s", graphId, name, ((Node) head.getEndNode()).toString(), head);
+            writerAttr.printf("%d,\"%s\",%s,%s", graphId, name, head.getEndNode().toString(), head);
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
@@ -498,6 +509,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NCond: [0][0]");
                     writerAttr.printf("; NInvoke: [0][0]");
                     writerAttr.printf("; NExceptions: [0][0]");
+                    writerAttr.printf("; NAllocations: [0][0]");
+                    writerAttr.printf("; NSimpleInstr: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
@@ -510,6 +523,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NCond: [%d][%d]", getNCond(sonPath), getNCond(pinnedPath));
                     writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
                     writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
+                    writerAttr.printf("; NAllocations: [%d][%d]", getNAllocations(sonPath), getNAllocations(pinnedPath));
+                    writerAttr.printf("; NSimpleInstr: [0][0]", getNSimpleInstr(sonPath), getNSimpleInstr(pinnedPath));
                 }
             }
             writerAttr.printf("%n");
@@ -785,11 +800,43 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nexc = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace"))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>"
+                if ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace"))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>")
                     nexc += 1;
                 }
             }
         }
         return nexc;
     }
+
+    private static int getNAllocations(List<Block> path) {
+        // The AbstractNewObjectNode is the base class for the new instance and new array nodes.
+        if (path == null) {
+            return 0;
+        }
+        int nnew = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof AbstractNewObjectNode) {
+                    nnew += 1;
+                }
+            }
+        }
+        return nnew;
+    }
+
+    private static int getNSimpleInstr(List<Block> path){
+        if (path==null){
+            return 0;
+        }
+        int nsimple = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                for(Node ninput : n.inputs())
+                    if(ninput instanceof BinaryNode || ninput instanceof LogicNode || ninput instanceof TernaryNode || ninput instanceof UnaryNode)
+                        nsimple ++;
+            }
+        }
+        return nsimple;
+    }
+
 }
