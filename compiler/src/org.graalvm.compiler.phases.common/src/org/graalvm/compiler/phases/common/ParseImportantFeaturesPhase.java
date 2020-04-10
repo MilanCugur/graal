@@ -52,6 +52,8 @@ import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
+import org.graalvm.compiler.nodes.java.AccessArrayNode;
+import org.graalvm.compiler.nodes.java.AccessMonitorNode;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionKey;
@@ -513,6 +515,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NExceptions: [0][0]");
                     writerAttr.printf("; NAllocations: [0][0]");
                     writerAttr.printf("; NSimpleInstr: [0][0]");
+                    writerAttr.printf("; NArrayAccess: [0][0]");
+                    writerAttr.printf("; NMonitor: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
@@ -526,7 +530,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
                     writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
                     writerAttr.printf("; NAllocations: [%d][%d]", getNAllocations(sonPath), getNAllocations(pinnedPath));
-                    writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath), getNSimpleInstr(pinnedPath));
+                    writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
+                    writerAttr.printf("; NArrayAccess: [%d][%d]", getNArrayAccess(sonPath), getNArrayAccess(pinnedPath));
+                    writerAttr.printf("; NMonitor: [%d][%d]", getNMonitor(sonPath), getNMonitor(pinnedPath));
                 }
             }
             writerAttr.printf("%n");
@@ -662,10 +668,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nnodes = 0;
         for (Block b : path) {
             for (Node n : schedule.nodesFor(b)) {
-                nnodes += 1;
-                if (n instanceof AbstractMergeNode) {
-                    nnodes += ((AbstractMergeNode) n).phis().snapshot().size();  // Add eventually phi nodes which are not block assigned
-                }
+                nnodes += 1;  // todo: // Add eventually phi nodes which are not block assigned
             }
         }
         return nnodes;
@@ -831,69 +834,50 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nnew;
     }
 
-    private static int getNSimpleInstr(List<Block> path) {
+    private static int getNSimpleInstr(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // LASTEST scheduling is important (avoid catching by phi)
         if (path == null) {
             return 0;
         }
         int nsimple = 0;
-        EconomicSet<AbstractEndNode> myEnds = EconomicSet.create(Equivalence.DEFAULT);
         for (Block b : path) {
-            for (Node n : b.getNodes()) {
-                if (n instanceof AbstractEndNode) {
-                    myEnds.add((AbstractEndNode) n);
-                }
-                for (Node ninput : n.inputs()) {
-                    if (ninput instanceof BinaryNode || ninput instanceof LogicNode || ninput instanceof TernaryNode || ninput instanceof UnaryNode) {
-                        nsimple++;
-                    }
-                }
-                if(n instanceof LoopEndNode){
-                    // For LoopBeginNode, the first value corresponds to the loop's predecessor, while the rest of the values correspond to the LoopEndNode
-                    LoopBeginNode lb = ((LoopEndNode)n).loopBegin();
-                    System.out.println("**********");
-                    System.out.println(path.toString());
-                    System.out.println(n);
-                    System.out.println(lb);
-                    System.out.println(Arrays.toString(lb.orderedLoopEnds()));
-                    for(PhiNode phi : lb.phis())
-                        System.out.println(phi+":"+phi.values());
-                    for(PhiNode phi : lb.phis()) {
-                        for (int i = 0; i < lb.orderedLoopEnds().length; i++) {
-                            LoopEndNode endn = lb.orderedLoopEnds()[i];
-                            if (endn == (LoopEndNode) n)
-                                System.out.println("MOJEND: " + endn + "__" +phi.valueAt(i+1));
-                        }
-                    }
-                    System.out.println("**********");
-                }
-            }
-        }
-
-        // get appropriate phi floating nodes
-        //writer.printf(", \"[%s][%s]\"", sonPath!=null&&__pathReachable(sonPath)!=null?__pathReachable(sonPath):"null", pinnedPath!=null&&__pathReachable(pinnedPath)!=null?__pathReachable(pinnedPath):"null");
-        //System.out.println(path.toString());
-        //System.out.println(myEnds);
-        for (AbstractMergeNode mnode : __pathReachable(path)) {  // go through my merges
-            EconomicSet<Integer> myindexes = EconomicSet.create(Equivalence.DEFAULT);  // find paths indexes
-            for (int i = 0; i < mnode.forwardEnds().size(); i++) {
-                AbstractEndNode minput = mnode.forwardEndAt(i);
-                if (myEnds.contains(minput)) {
-                    myindexes.add(i);
-                }
-            }
-            //System.out.println(myindexes);
-            for (ValuePhiNode mphi : mnode.valuePhis()) { // go through appropriate phi nodes, update simple instructions counter
-                //System.out.println(mnode.forwardEnds().toString());
-                //System.out.println(mphi.values() + "\n\n");
-                for (Integer i : myindexes) {
-                    Node tmp = mphi.valueAt(i);
-                    if (tmp instanceof BinaryNode || tmp instanceof LogicNode || tmp instanceof TernaryNode || tmp instanceof UnaryNode) {
-                        nsimple++;
-                    }
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {
+                    nsimple++;
                 }
             }
         }
         return nsimple;
+    }
+
+    private static int getNArrayAccess(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int narracc = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {  // its okay to go through fixed nodes
+                if (n instanceof AccessArrayNode) {
+                    narracc += 1;
+                }
+            }
+        }
+        return narracc;
+    }
+
+    private static int getNMonitor(List<Block> path){
+        // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
+        if (path == null) {
+            return 0;
+        }
+        int nmonitor = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {  // its okay to go through fixed nodes
+                if (n instanceof AccessMonitorNode) {
+                    nmonitor += 1;
+                }
+            }
+        }
+        return nmonitor;
     }
 
 }
