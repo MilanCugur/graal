@@ -51,9 +51,13 @@ import org.graalvm.compiler.nodes.calc.TernaryNode;
 import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
 import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
 import org.graalvm.compiler.nodes.java.AccessArrayNode;
 import org.graalvm.compiler.nodes.java.AccessMonitorNode;
+import org.graalvm.compiler.nodes.java.ExceptionObjectNode;
+import org.graalvm.compiler.nodes.memory.FixedAccessNode;
+import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.options.OptionKey;
@@ -475,7 +479,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
         synchronized (writer) {
             long graphId = graph.graphId();
-            int nodeBCI = ((Node) head.getEndNode()).getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
+            int nodeBCI = head.getEndNode().getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
             String name = graph.method().getName();
 
             writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, head.getEndNode().toString(), card, head.getEndNode().getId(), nodeBCI, head);
@@ -517,6 +521,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NSimpleInstr: [0][0]");
                     writerAttr.printf("; NArrayAccess: [0][0]");
                     writerAttr.printf("; NMonitor: [0][0]");
+                    writerAttr.printf("; NMemoryAccess: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
@@ -533,6 +538,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
                     writerAttr.printf("; NArrayAccess: [%d][%d]", getNArrayAccess(sonPath), getNArrayAccess(pinnedPath));
                     writerAttr.printf("; NMonitor: [%d][%d]", getNMonitor(sonPath), getNMonitor(pinnedPath));
+                    writerAttr.printf("; NMemoryAccess: [%d][%d]", getNMemoryAccess(sonPath, schedule), getNMemoryAccess(pinnedPath, schedule));
                 }
             }
             writerAttr.printf("%n");
@@ -810,7 +816,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nexc = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace"))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>")
+                if (n instanceof BytecodeExceptionNode || ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace")))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>"); TODO: ThrowBytecodeExceptionNode in com.oracle.svm.core.graal.nodes; Why?
                     nexc += 1;
                 }
             }
@@ -864,7 +870,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return narracc;
     }
 
-    private static int getNMonitor(List<Block> path){
+    private static int getNMonitor(List<Block> path) {
         // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
         if (path == null) {
             return 0;
@@ -878,6 +884,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
         return nmonitor;
+    }
+
+    private static int getNMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule){
+        if (path == null) {
+            return 0;
+        }
+        int nmemacc = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof FixedAccessNode || n instanceof MemoryAccess) {
+                    nmemacc++;
+                }
+            }
+        }
+        return nmemacc;
     }
 
 }
