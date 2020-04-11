@@ -30,7 +30,6 @@ import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Stack;
 import java.util.stream.Collectors;
@@ -55,7 +54,7 @@ import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
 import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
 import org.graalvm.compiler.nodes.java.AccessArrayNode;
 import org.graalvm.compiler.nodes.java.AccessMonitorNode;
-import org.graalvm.compiler.nodes.memory.FixedAccessNode;
+import org.graalvm.compiler.nodes.java.MonitorEnterNode;
 import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.options.Option;
@@ -232,22 +231,22 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // temporary writeout
         for (Block b : schedule.getCFG().getBlocks())
-            System.err.println(b + ": " + schedule.nodesFor(b) + "[" + b.getLoopDepth() + "]");
-        System.err.println("\n\n");
+            System.err.println(b + ": " + schedule.nodesFor(b)); //+ "[" + b.getLoopDepth() + "]");
         for (Node node : graph.getNodes()) {
-            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null") + " cyc: " + __castNodeCycles(node.estimatedNodeCycles()) + " ass: " + __castNodeSize(node.estimatedNodeSize()));
+            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null"));
             //if (node instanceof InvokeNode) {
             //    System.err.println("CALL_TARGET: [" + ((InvokeNode) node).callTarget().targetName() + "]");
             //}
-            System.err.println("INPUTS: " + node.inputs().toString());
-            for (Node ninput : node.inputs())
-                System.err.println("NODE: " + ninput + ":" + (ninput instanceof BinaryNode || ninput instanceof LogicNode || ninput instanceof TernaryNode || ninput instanceof UnaryNode));
-            if (node instanceof AbstractMergeNode) {
-                System.err.println("ABMN: PHIS" + Arrays.toString(((AbstractMergeNode) node).phis().snapshot().toArray()));
-                System.err.println("ABMN: VALUE PHIS" + Arrays.toString(((AbstractMergeNode) node).valuePhis().snapshot().toArray()));
-                System.err.println("ABMN: MEMORY PHIS" + Arrays.toString(((AbstractMergeNode) node).memoryPhis().snapshot().toArray()));
-            }
+            //System.err.println("INPUTS: " + node.inputs().toString());
+            //for (Node ninput : node.inputs())
+            //    System.err.println("NODE: " + ninput + ":" + (ninput instanceof BinaryNode || ninput instanceof LogicNode || ninput instanceof TernaryNode || ninput instanceof UnaryNode));
+            //if (node instanceof AbstractMergeNode) {
+            //    System.err.println("ABMN: PHIS" + Arrays.toString(((AbstractMergeNode) node).phis().snapshot().toArray()));
+            //    System.err.println("ABMN: VALUE PHIS" + Arrays.toString(((AbstractMergeNode) node).valuePhis().snapshot().toArray()));
+            //    System.err.println("ABMN: MEMORY PHIS" + Arrays.toString(((AbstractMergeNode) node).memoryPhis().snapshot().toArray()));
+            //}
         }
+        //System.err.println("\n\n");
         // end of temporary writeout
 
         // Graph traversal algorithm
@@ -500,35 +499,41 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (sonHead instanceof LoopExitNode) {
                     writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
                     writerAttr.printf("; IRFixedNodeCount: [0][0]");
-                    writerAttr.printf("; IRNodeCount: [0][0]");
+                    writerAttr.printf("; IRTotalNodeCount: [0][0]");
                     writerAttr.printf("; EstimatedCPUCycles: [0][0]");
                     writerAttr.printf("; EstimatedAssemblySize: [0][0]");
                     writerAttr.printf("; LoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
-                    writerAttr.printf("; MaxPathLoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
+                    writerAttr.printf("; MaxLoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
+                    writerAttr.printf("; NLoops: [0][0]");
+                    writerAttr.printf("; NLoopExits: [1][0]");
                     writerAttr.printf("; NCond: [0][0]");
                     writerAttr.printf("; NInvoke: [0][0]");
-                    writerAttr.printf("; NExceptions: [0][0]");
                     writerAttr.printf("; NAllocations: [0][0]");
-                    writerAttr.printf("; NSimpleInstr: [0][0]");
+                    writerAttr.printf("; NMonitorAcquisition: [0][0]");
+                    writerAttr.printf("; NMonitorAccess: [0][0]");
                     writerAttr.printf("; NArrayAccess: [0][0]");
-                    writerAttr.printf("; NMonitor: [0][0]");
+                    writerAttr.printf("; NExceptions: [0][0]");
+                    writerAttr.printf("; NSimpleInstr: [0][0]");
                     writerAttr.printf("; NMemoryAccess: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
                     writerAttr.printf("; IRFixedNodeCount: [%d][%d]", getIRFixedNodeCount(sonPath), getIRFixedNodeCount(pinnedPath));
-                    writerAttr.printf("; IRNodeCount: [%d][%d]", getIRNodeCount(sonPath, schedule), getIRNodeCount(pinnedPath, schedule));
-                    writerAttr.printf("; EstimatedCPUCycles: [%d][%d]", getEstimatedNodeCycles(sonPath, schedule), getEstimatedNodeCycles(pinnedPath, schedule));
-                    writerAttr.printf("; EstimatedAssemblySize: [%d][%d]", getEstimatedAssemblyNodeSize(sonPath, schedule), getEstimatedAssemblyNodeSize(pinnedPath, schedule));
+                    writerAttr.printf("; IRTotalNodeCount: [%d][%d]", getIRTotalNodeCount(sonPath, schedule), getIRTotalNodeCount(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedCPUCycles: [%d][%d]", getEstimatedCPUCycles(sonPath, schedule), getEstimatedCPUCycles(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedAssemblySize: [%d][%d]", getEstimatedAssemblySize(sonPath, schedule), getEstimatedAssemblySize(pinnedPath, schedule));
                     writerAttr.printf("; LoopDepth: [%d][%d]", getLoopDepth(sonPath), getLoopDepth(pinnedPath));
-                    writerAttr.printf("; MaxPathLoopDepth: [%d][%d]", getMaxLoopDepth(sonPath), getMaxLoopDepth(pinnedPath));
+                    writerAttr.printf("; MaxLoopDepth: [%d][%d]", getMaxLoopDepth(sonPath), getMaxLoopDepth(pinnedPath));
+                    writerAttr.printf("; NLoops: [%d][%d]", getNLoops(sonPath), getNLoops(pinnedPath));
+                    writerAttr.printf("; NLoopExits: [%d][%d]", getNLoopExits(sonPath), getNLoopExits(pinnedPath));
                     writerAttr.printf("; NCond: [%d][%d]", getNCond(sonPath), getNCond(pinnedPath));
                     writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
-                    writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
                     writerAttr.printf("; NAllocations: [%d][%d]", getNAllocations(sonPath), getNAllocations(pinnedPath));
-                    writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
+                    writerAttr.printf("; NMonitorAcquisition: [%d][%d]", getNMonitorAcquisition(sonPath), getNMonitorAcquisition(pinnedPath));
+                    writerAttr.printf("; NMonitorAccess: [%d][%d]", getNMonitorAccess(sonPath), getNMonitorAccess(pinnedPath));
                     writerAttr.printf("; NArrayAccess: [%d][%d]", getNArrayAccess(sonPath), getNArrayAccess(pinnedPath));
-                    writerAttr.printf("; NMonitor: [%d][%d]", getNMonitor(sonPath), getNMonitor(pinnedPath));
+                    writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
+                    writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
                     writerAttr.printf("; NMemoryAccess: [%d][%d]", getNMemoryAccess(sonPath, schedule), getNMemoryAccess(pinnedPath, schedule));
                 }
             }
@@ -658,20 +663,18 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nnodes;
     }
 
-    private static int getIRNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static int getIRTotalNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
         int nnodes = 0;
         for (Block b : path) {
-            for (Node n : schedule.nodesFor(b)) {
-                nnodes += 1;  // todo: // Add eventually phi nodes which are not block assigned
-            }
+            nnodes += schedule.nodesFor(b).size();  // annotation: phi nodes aren't counted - they are naturally connected with AbstractMerge and LoopBegin nodes
         }
         return nnodes;
     }
 
-    private static int getEstimatedNodeCycles(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static int getEstimatedCPUCycles(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
@@ -712,7 +715,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
     }
 
-    private static int getEstimatedAssemblyNodeSize(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static int getEstimatedAssemblySize(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
@@ -773,6 +776,34 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return maxdepth;
     }
 
+    private static int getNLoops(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nloops = 0;
+        for (Block b : path) {
+            if (b.isLoopHeader()) {
+                nloops++;
+            }
+        }
+        return nloops;
+    }
+
+    private static int getNLoopExits(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nlexit = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof LoopExitNode) {
+                    nlexit++;
+                }
+            }
+        }
+        return nlexit;
+    }
+
     private static int getNCond(List<Block> path) {
         if (path == null) {
             return 0;
@@ -800,30 +831,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return ninv;
     }
 
-    private static int genNExceptions(List<Block> path) {
-        if (path == null) {
-            return 0;
-        }
-        int nexc = 0;
-        for (Block b : path) {
-            for (Node n : b.getNodes()) {
-                if (n instanceof BytecodeExceptionNode || ((n instanceof InvokeNode) && (((InvokeNode) n).callTarget().targetName().equals("Throwable.fillInStackTrace")))) {  // todo: fix this with catching "Throwable" (unittest there is "<init>"); TODO: ThrowBytecodeExceptionNode in com.oracle.svm.core.graal.nodes; Why?
-                    nexc += 1;
-                }
-            }
-        }
-        return nexc;
-    }
-
     private static int getNAllocations(List<Block> path) {
-        // The AbstractNewObjectNode is the base class for the new instance and new array nodes.
         if (path == null) {
             return 0;
         }
         int nnew = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n instanceof AbstractNewObjectNode) {
+                if (n instanceof AbstractNewObjectNode) {  // The AbstractNewObjectNode is the base class for the new instance and new array nodes.
                     nnew += 1;
                 }
             }
@@ -831,19 +846,34 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nnew;
     }
 
-    private static int getNSimpleInstr(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // LASTEST scheduling is important (avoid catching by phi)
+    private static int getNMonitorAcquisition(List<Block> path) {
         if (path == null) {
             return 0;
         }
-        int nsimple = 0;
+        int nmonacq = 0;
         for (Block b : path) {
-            for (Node n : schedule.nodesFor(b)) {
-                if (n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {
-                    nsimple++;
+            for (Node n : b.getNodes()) {
+                if (n instanceof MonitorEnterNode) {
+                    nmonacq += 1;
                 }
             }
         }
-        return nsimple;
+        return nmonacq;
+    }
+
+    private static int getNMonitorAccess(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nmonitor = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {  // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
+                if (n instanceof AccessMonitorNode) {
+                    nmonitor += 1;
+                }
+            }
+        }
+        return nmonitor;
     }
 
     private static int getNArrayAccess(List<Block> path) {
@@ -861,30 +891,49 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return narracc;
     }
 
-    private static int getNMonitor(List<Block> path) {
-        // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
+    private static int genNExceptions(List<Block> path) {
         if (path == null) {
             return 0;
         }
-        int nmonitor = 0;
+        int nexc = 0;
         for (Block b : path) {
-            for (Node n : b.getNodes()) {  // its okay to go through fixed nodes
-                if (n instanceof AccessMonitorNode) {
-                    nmonitor += 1;
+            for (Node n : b.getNodes()) {
+                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("Throwable") || (n instanceof ControlSinkNode) && n.toString().contains("ThrowBytecodeException")) {  // todo: fix this. Current version: Do i call a method from class Throwable? or name equality
+                    nexc += 1;
                 }
             }
         }
-        return nmonitor;
+        return nexc;
+    }
+    // 1. SubstrateNewInstance, StoreField#Throwable.cause, StoreField#Throwable.stackTrace, StoreField#Throwable.suppressedExceptions, invoke#Throwable.fillInStackTrace (I throw ex)
+    // 2. ThrowBytecodeException
+    // 3. BytecodeException, SubstrateNewInstance, StoreField#Throwble...printStreamBarrier, FinalFieldBarrier, invoke#Throwable.printStackTrace (code throw ex)
+    // srcs:
+    // BytecodeExceptionNode.java, ThrowBytecodeExceptionNode.java (com.oracle.svm.core.graal.nodes;), ExceptionObjectNode
+
+    private static int getNSimpleInstr(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // LASTEST scheduling is important (to avoid catching by phi)
+        if (path == null) {
+            return 0;
+        }
+        int nsimple = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof ConstantNode || n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {   // todo: Should I bound by David CPU cycles assumption?
+                    nsimple++;
+                }
+            }
+        }
+        return nsimple;
     }
 
-    private static int getNMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule){
+    private static int getNMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
         int nmemacc = 0;
         for (Block b : path) {
             for (Node n : schedule.nodesFor(b)) {
-                if (n instanceof FixedAccessNode || n instanceof MemoryAccess) {
+                if (n instanceof MemoryAccess) {  // todo: make a test, add more instanceof here
                     nmemacc++;
                 }
             }
