@@ -61,7 +61,7 @@ public class HighTier extends BaseTier<HighTierContext> {
         /* Added "ParseImportantFeaturesPhase here - add it before the canonicalizer phase */
         if(ParseImportantFeaturesPhase.Options.ParseImportantFeatures.getValue(options)) {
             String methodRegex = org.graalvm.compiler.debug.DebugOptions.MethodFilter.getValue(options);  // If Method Filter is specified, parse target method name
-            appendPhase(new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT, methodRegex));
+            appendPhase(new ParseImportantFeaturesPhase(methodRegex));
             }
 
         CanonicalizerPhase canonicalizer = createCanonicalizerPhase(options);

@@ -55,7 +55,6 @@ import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
 import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
 import org.graalvm.compiler.nodes.java.AccessArrayNode;
 import org.graalvm.compiler.nodes.java.AccessMonitorNode;
-import org.graalvm.compiler.nodes.java.ExceptionObjectNode;
 import org.graalvm.compiler.nodes.memory.FixedAccessNode;
 import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -187,7 +186,6 @@ class TraversalState {
 
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
-    private Stage stage;
     private String methodRegex;
 
     private static PrintWriter writer;
@@ -204,15 +202,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
     }
 
-    public ParseImportantFeaturesPhase(Stage stage, String methodRegex) {
-        this.stage = stage;
+    public ParseImportantFeaturesPhase(String methodRegex) {
         this.methodRegex = methodRegex;
-    }
-
-    public enum Stage {
-        INIT,
-        EARLY,
-        LATE
     }
 
     public static class Options {

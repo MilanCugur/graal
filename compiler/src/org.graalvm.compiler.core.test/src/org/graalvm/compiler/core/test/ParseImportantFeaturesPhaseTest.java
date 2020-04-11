@@ -43,7 +43,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
 
     private void testCodeSnippet(String snippet, String groundTruth) {
         StructuredGraph graph = parseEager(snippet, StructuredGraph.AllowAssumptions.NO);
-        ParseImportantFeaturesPhase p = new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT, snippet);
+        ParseImportantFeaturesPhase p = new ParseImportantFeaturesPhase(snippet);
         p.apply(graph, null);
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
@@ -129,7 +129,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
 
     private void __printCodeSnippet(String snippet) {
         StructuredGraph graph = parseEager(snippet, StructuredGraph.AllowAssumptions.NO);
-        ParseImportantFeaturesPhase p = new ParseImportantFeaturesPhase(ParseImportantFeaturesPhase.Stage.INIT, snippet);
+        ParseImportantFeaturesPhase p = new ParseImportantFeaturesPhase(snippet);
         p.apply(graph, null);
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
