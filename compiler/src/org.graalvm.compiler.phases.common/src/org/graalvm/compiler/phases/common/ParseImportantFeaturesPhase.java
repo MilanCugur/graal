@@ -46,15 +46,12 @@ import org.graalvm.compiler.nodeinfo.NodeCycles;
 import org.graalvm.compiler.nodeinfo.NodeSize;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
+import org.graalvm.compiler.nodes.calc.FloatingNode;
 import org.graalvm.compiler.nodes.calc.TernaryNode;
 import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
-import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
-import org.graalvm.compiler.nodes.java.AbstractNewObjectNode;
-import org.graalvm.compiler.nodes.java.AccessArrayNode;
-import org.graalvm.compiler.nodes.java.AccessMonitorNode;
-import org.graalvm.compiler.nodes.java.MonitorEnterNode;
+import org.graalvm.compiler.nodes.java.*;
 import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.options.Option;
@@ -498,10 +495,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 List<Block> sonPath = __sons.getValue();
                 if (sonHead instanceof LoopExitNode) {
                     writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                    writerAttr.printf("; NBlocks: [0][0]");
                     writerAttr.printf("; IRFixedNodeCount: [0][0]");
-                    writerAttr.printf("; IRTotalNodeCount: [0][0]");
+                    writerAttr.printf("; IRFloatingNodeCount: [0][0]");
                     writerAttr.printf("; EstimatedCPUCycles: [0][0]");
                     writerAttr.printf("; EstimatedAssemblySize: [0][0]");
+                    writerAttr.printf("; EstimatedCPUCheap: [0][0]");
+                    writerAttr.printf("; EstimatedCPUCExpns: [0][0]");
                     writerAttr.printf("; LoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
                     writerAttr.printf("; MaxLoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
                     writerAttr.printf("; NLoops: [0][0]");
@@ -513,15 +513,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NMonitorAccess: [0][0]");
                     writerAttr.printf("; NArrayAccess: [0][0]");
                     writerAttr.printf("; NExceptions: [0][0]");
+                    writerAttr.printf("; NAssertions: [0][0]");
+                    writerAttr.printf("; NControlSinks: [0][0]");
                     writerAttr.printf("; NSimpleInstr: [0][0]");
+                    writerAttr.printf("; NAccessFields: [0][0]");
                     writerAttr.printf("; NMemoryAccess: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
+                    writerAttr.printf("; NBlocks: [%d][%d]", getNBlocks(sonPath), getNBlocks(pinnedPath));
                     writerAttr.printf("; IRFixedNodeCount: [%d][%d]", getIRFixedNodeCount(sonPath), getIRFixedNodeCount(pinnedPath));
-                    writerAttr.printf("; IRTotalNodeCount: [%d][%d]", getIRTotalNodeCount(sonPath, schedule), getIRTotalNodeCount(pinnedPath, schedule));
+                    writerAttr.printf("; IRFloatingNodeCount: [%d][%d]", getIRFloatingNodeCount(sonPath, schedule), getIRFloatingNodeCount(pinnedPath, schedule));
                     writerAttr.printf("; EstimatedCPUCycles: [%d][%d]", getEstimatedCPUCycles(sonPath, schedule), getEstimatedCPUCycles(pinnedPath, schedule));
                     writerAttr.printf("; EstimatedAssemblySize: [%d][%d]", getEstimatedAssemblySize(sonPath, schedule), getEstimatedAssemblySize(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedCPUCheap: [%d][%d]", getNEstimatedCPUCheap(sonPath, schedule), getNEstimatedCPUCheap(pinnedPath, schedule));
+                    writerAttr.printf("; EstimatedCPUCExpns: [%d][%d]", getNEstimatedCPUExpns(sonPath, schedule), getNEstimatedCPUExpns(pinnedPath, schedule));
                     writerAttr.printf("; LoopDepth: [%d][%d]", getLoopDepth(sonPath), getLoopDepth(pinnedPath));
                     writerAttr.printf("; MaxLoopDepth: [%d][%d]", getMaxLoopDepth(sonPath), getMaxLoopDepth(pinnedPath));
                     writerAttr.printf("; NLoops: [%d][%d]", getNLoops(sonPath), getNLoops(pinnedPath));
@@ -532,8 +538,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NMonitorAcquisition: [%d][%d]", getNMonitorAcquisition(sonPath), getNMonitorAcquisition(pinnedPath));
                     writerAttr.printf("; NMonitorAccess: [%d][%d]", getNMonitorAccess(sonPath), getNMonitorAccess(pinnedPath));
                     writerAttr.printf("; NArrayAccess: [%d][%d]", getNArrayAccess(sonPath), getNArrayAccess(pinnedPath));
-                    writerAttr.printf("; NExceptions: [%d][%d]", genNExceptions(sonPath), genNExceptions(pinnedPath));
+                    writerAttr.printf("; NExceptions: [%d][%d]", getNExceptions(sonPath), getNExceptions(pinnedPath));
+                    writerAttr.printf("; NAssertions: [%d][%d]", getNAssertions(sonPath), getNAssertions(pinnedPath));
+                    writerAttr.printf("; NControlSinks: [%d][%d]", getNControlSinks(sonPath), getNControlSinks(pinnedPath));
                     writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
+                    writerAttr.printf("; NAccessFields: [%d][%d]", getNAccessFields(sonPath), getNAccessFields(pinnedPath));
                     writerAttr.printf("; NMemoryAccess: [%d][%d]", getNMemoryAccess(sonPath, schedule), getNMemoryAccess(pinnedPath, schedule));
                 }
             }
@@ -650,6 +659,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     /* Util functions that parse important attributes of blocks */
+    private static int getNBlocks(List<Block> path) {
+        if (path == null)
+            return 0;
+        return path.size();
+    }
+
     private static int getIRFixedNodeCount(List<Block> path) {
         if (path == null) {
             return 0;
@@ -663,15 +678,19 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nnodes;
     }
 
-    private static int getIRTotalNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static int getIRFloatingNodeCount(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
-        int nnodes = 0;
+        int nfloat = 0;
         for (Block b : path) {
-            nnodes += schedule.nodesFor(b).size();  // annotation: phi nodes aren't counted - they are naturally connected with AbstractMerge and LoopBegin nodes
+            for (Node n : schedule.nodesFor(b)) {  // annotation: phi nodes aren't counted - they are naturally connected with AbstractMerge and LoopBegin nodes
+                if (n instanceof FloatingNode) {
+                    nfloat++;
+                }
+            }
         }
-        return nnodes;
+        return nfloat;
     }
 
     private static int getEstimatedCPUCycles(List<Block> path, StructuredGraph.ScheduleResult schedule) {
@@ -754,6 +773,36 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         } else {
             return 0;  // SIZE_UNSET, SIZE_UNKNOWN, SIZE_IGNORED, SIZE_0
         }
+    }
+
+    private static int getNEstimatedCPUCheap(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // CYCLES_0 || CYCLES_1
+        if (path == null) {
+            return 0;
+        }
+        int nchp = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n.estimatedNodeCycles() == NodeCycles.CYCLES_0 || n.estimatedNodeCycles() == NodeCycles.CYCLES_1) {
+                    nchp++;
+                }
+            }
+        }
+        return nchp;
+    }
+
+    private static int getNEstimatedCPUExpns(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // CYCLES_1024 || CYCLES_512 || CYCLES_256 || CYCLES_128 || CYCLES_64
+        if (path == null) {
+            return 0;
+        }
+        int nexp = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n.estimatedNodeCycles() == NodeCycles.CYCLES_1024 || n.estimatedNodeCycles() == NodeCycles.CYCLES_512 || n.estimatedNodeCycles() == NodeCycles.CYCLES_256 || n.estimatedNodeCycles() == NodeCycles.CYCLES_128 || n.estimatedNodeCycles() == NodeCycles.CYCLES_64) {
+                    nexp++;
+                }
+            }
+        }
+        return nexp;
     }
 
     private static int getLoopDepth(List<Block> path) {
@@ -891,7 +940,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return narracc;
     }
 
-    private static int genNExceptions(List<Block> path) {
+    private static int getNExceptions(List<Block> path) {
         if (path == null) {
             return 0;
         }
@@ -911,6 +960,36 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     // srcs:
     // BytecodeExceptionNode.java, ThrowBytecodeExceptionNode.java (com.oracle.svm.core.graal.nodes;), ExceptionObjectNode
 
+    private static int getNAssertions(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nass = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("AssertionError")) {  // todo: where the AssertioNode disappeared?
+                    nass++;
+                }
+            }
+        }
+        return nass;
+    }
+
+    private static int getNControlSinks(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ncs = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof ControlSinkNode) {
+                    ncs++;
+                }
+            }
+        }
+        return ncs;
+    }
+
     private static int getNSimpleInstr(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // LASTEST scheduling is important (to avoid catching by phi)
         if (path == null) {
             return 0;
@@ -918,13 +997,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nsimple = 0;
         for (Block b : path) {
             for (Node n : schedule.nodesFor(b)) {
-                if (n instanceof ConstantNode || n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {   // todo: Should I bound by David CPU cycles assumption?
+                if (n instanceof ConstantNode || n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {
                     nsimple++;
                 }
             }
         }
         return nsimple;
     }
+
+    private static int getNAccessFields(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int naccf = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof AccessFieldNode) {
+                    naccf++;
+                }
+            }
+        }
+        return naccf;
+    }
+
 
     private static int getNMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
@@ -933,7 +1028,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nmemacc = 0;
         for (Block b : path) {
             for (Node n : schedule.nodesFor(b)) {
-                if (n instanceof MemoryAccess) {  // todo: make a test, add more instanceof here
+                if (n instanceof MemoryAccess) {
                     nmemacc++;
                 }
             }
