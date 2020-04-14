@@ -506,18 +506,28 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; MaxLoopDepth: [%d][0]", sonPath.get(0).getLoopDepth());
                     writerAttr.printf("; NLoops: [0][0]");
                     writerAttr.printf("; NLoopExits: [1][0]");
-                    writerAttr.printf("; NCond: [0][0]");
+                    writerAttr.printf("; NControlSplits: [0][0]");
                     writerAttr.printf("; NInvoke: [0][0]");
                     writerAttr.printf("; NAllocations: [0][0]");
-                    writerAttr.printf("; NMonitorAcquisition: [0][0]");
-                    writerAttr.printf("; NMonitorAccess: [0][0]");
-                    writerAttr.printf("; NArrayAccess: [0][0]");
+                    writerAttr.printf("; NMonitorEnter: [0][0]");
+                    writerAttr.printf("; NMonitorExit: [0][0]");
+                    writerAttr.printf("; NArrayLoad: [0][0]");
+                    writerAttr.printf("; NArrayStore: [0][0]");
+                    writerAttr.printf("; NArrayCompare: [0][0]");
+                    writerAttr.printf("; NArrayCopy: [0][0]");
                     writerAttr.printf("; NExceptions: [0][0]");
                     writerAttr.printf("; NAssertions: [0][0]");
                     writerAttr.printf("; NControlSinks: [0][0]");
-                    writerAttr.printf("; NSimpleInstr: [0][0]");
-                    writerAttr.printf("; NAccessFields: [0][0]");
-                    writerAttr.printf("; NMemoryAccess: [0][0]");
+                    writerAttr.printf("; NConstNodes: [0][0]");
+                    writerAttr.printf("; NLogicOperations: [0][0]");
+                    writerAttr.printf("; NUnaryOperations: [0][0]");
+                    writerAttr.printf("; NBinaryOperations: [0][0]");
+                    writerAttr.printf("; NTernaryOperations: [0][0]");
+                    writerAttr.printf("; NStaticLoadFields: [0][0]");
+                    writerAttr.printf("; NInstanceLoadFields: [0][0]");
+                    writerAttr.printf("; NStaticStoreFields: [0][0]");
+                    writerAttr.printf("; NInstanceStoreFields: [0][0]");
+                    writerAttr.printf("; NRawMemoryAccess: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
@@ -532,18 +542,28 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; MaxLoopDepth: [%d][%d]", getMaxLoopDepth(sonPath), getMaxLoopDepth(pinnedPath));
                     writerAttr.printf("; NLoops: [%d][%d]", getNLoops(sonPath), getNLoops(pinnedPath));
                     writerAttr.printf("; NLoopExits: [%d][%d]", getNLoopExits(sonPath), getNLoopExits(pinnedPath));
-                    writerAttr.printf("; NCond: [%d][%d]", getNCond(sonPath), getNCond(pinnedPath));
+                    writerAttr.printf("; NControlSplits: [%d][%d]", getNControlSplits(sonPath), getNControlSplits(pinnedPath));
                     writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
                     writerAttr.printf("; NAllocations: [%d][%d]", getNAllocations(sonPath), getNAllocations(pinnedPath));
-                    writerAttr.printf("; NMonitorAcquisition: [%d][%d]", getNMonitorAcquisition(sonPath), getNMonitorAcquisition(pinnedPath));
-                    writerAttr.printf("; NMonitorAccess: [%d][%d]", getNMonitorAccess(sonPath), getNMonitorAccess(pinnedPath));
-                    writerAttr.printf("; NArrayAccess: [%d][%d]", getNArrayAccess(sonPath), getNArrayAccess(pinnedPath));
+                    writerAttr.printf("; NMonitorEnter: [%d][%d]", getNMonitorEnter(sonPath), getNMonitorEnter(pinnedPath));
+                    writerAttr.printf("; NMonitorExit: [%d][%d]", getNMonitorExit(sonPath), getNMonitorExit(pinnedPath));
+                    writerAttr.printf("; NArrayLoad: [%d][%d]", getNArrayLoad(sonPath), getNArrayLoad(pinnedPath));
+                    writerAttr.printf("; NArrayStore: [%d][%d]", getNArrayStore(sonPath), getNArrayStore(pinnedPath));
+                    writerAttr.printf("; NArrayCompare: [%d][%d]", getNArrayCompare(sonPath), getNArrayCompare(pinnedPath));
+                    writerAttr.printf("; NArrayCopy: [%d][%d]", getNArrayCopy(sonPath), getNArrayCopy(pinnedPath));
                     writerAttr.printf("; NExceptions: [%d][%d]", getNExceptions(sonPath), getNExceptions(pinnedPath));
                     writerAttr.printf("; NAssertions: [%d][%d]", getNAssertions(sonPath), getNAssertions(pinnedPath));
                     writerAttr.printf("; NControlSinks: [%d][%d]", getNControlSinks(sonPath), getNControlSinks(pinnedPath));
-                    writerAttr.printf("; NSimpleInstr: [%d][%d]", getNSimpleInstr(sonPath, schedule), getNSimpleInstr(pinnedPath, schedule));
-                    writerAttr.printf("; NAccessFields: [%d][%d]", getNAccessFields(sonPath), getNAccessFields(pinnedPath));
-                    writerAttr.printf("; NMemoryAccess: [%d][%d]", getNMemoryAccess(sonPath, schedule), getNMemoryAccess(pinnedPath, schedule));
+                    writerAttr.printf("; NConstNodes: [%d][%d]", getNConstNodes(sonPath, schedule), getNConstNodes(pinnedPath, schedule));
+                    writerAttr.printf("; NLogicOperations: [%d][%d]", getNLogicOperations(sonPath, schedule), getNLogicOperations(pinnedPath, schedule));
+                    writerAttr.printf("; NUnaryOperations: [%d][%d]", getNUnaryOperations(sonPath, schedule), getNUnaryOperations(pinnedPath, schedule));
+                    writerAttr.printf("; NBinaryOperations: [%d][%d]", getNBinaryOperations(sonPath, schedule), getNBinaryOperations(pinnedPath, schedule));
+                    writerAttr.printf("; NTernaryOperations: [%d][%d]", getNTernaryOperations(sonPath, schedule), getNTernaryOperations(pinnedPath, schedule));
+                    writerAttr.printf("; NStaticLoadFields: [%d][%d]", getNStaticLoadFields(sonPath), getNStaticLoadFields(pinnedPath));
+                    writerAttr.printf("; NInstanceLoadFields: [%d][%d]", getNInstanceLoadFields(sonPath), getNInstanceLoadFields(pinnedPath));
+                    writerAttr.printf("; NStaticStoreFields: [%d][%d]", getNStaticStoreFields(sonPath), getNStaticStoreFields(pinnedPath));
+                    writerAttr.printf("; NInstanceStoreFields: [%d][%d]", getNInstanceStoreFields(sonPath), getNInstanceStoreFields(pinnedPath));
+                    writerAttr.printf("; NRawMemoryAccess: [%d][%d]", getNRawMemoryAccess(sonPath, schedule), getNRawMemoryAccess(pinnedPath, schedule));
                 }
             }
             writerAttr.printf("%n");
@@ -853,17 +873,17 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nlexit;
     }
 
-    private static int getNCond(List<Block> path) {
+    private static int getNControlSplits(List<Block> path) {
         if (path == null) {
             return 0;
         }
-        int ncond = 0;
+        int ncs = 0;
         for (Block b : path) {
             if (b.getEndNode() instanceof ControlSplitNode) {
-                ncond += 1;
+                ncs += 1;
             }
         }
-        return ncond;
+        return ncs;
     }
 
     private static int getNInvoke(List<Block> path) {
@@ -895,14 +915,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nnew;
     }
 
-    private static int getNMonitorAcquisition(List<Block> path) {
+    private static int getNMonitorEnter(List<Block> path) {
         if (path == null) {
             return 0;
         }
         int nmonacq = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n instanceof MonitorEnterNode) {
+                if (n instanceof MonitorEnterNode || n instanceof RawMonitorEnterNode) {
                     nmonacq += 1;
                 }
             }
@@ -910,34 +930,79 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return nmonacq;
     }
 
-    private static int getNMonitorAccess(List<Block> path) {
+    private static int getNMonitorExit(List<Block> path) {
         if (path == null) {
             return 0;
         }
-        int nmonitor = 0;
+        int nexit = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {  // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
-                if (n instanceof AccessMonitorNode) {
-                    nmonitor += 1;
+                if (n instanceof MonitorExitNode) {
+                    nexit += 1;
                 }
             }
         }
-        return nmonitor;
+        return nexit;
     }
 
-    private static int getNArrayAccess(List<Block> path) {
+    private static int getNArrayLoad(List<Block> path) {
         if (path == null) {
             return 0;
         }
-        int narracc = 0;
+        int nload = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {  // its okay to go through fixed nodes
-                if (n instanceof AccessArrayNode) {
-                    narracc += 1;
+                if (n instanceof LoadIndexedNode) {
+                    nload += 1;
                 }
             }
         }
-        return narracc;
+        return nload;
+    }
+
+    private static int getNArrayStore(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nstore = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {  // its okay to go through fixed nodes
+                if (n instanceof StoreIndexedNode) {
+                    nstore += 1;
+                }
+            }
+        }
+        return nstore;
+    }
+
+    private static int getNArrayCompare(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ncmp = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n.toString().contains("ArrayEquals") || n.toString().contains("Arrays.compare")) {  // todo: fix this by including ArrayEqualsNode.java, ArrayRegionsEqualsNode.java, ArrayCompareToNode.java (org.graalvm.replacements.*)
+                    ncmp += 1;
+                }
+            }
+        }
+        return ncmp;
+    }
+
+    private static int getNArrayCopy(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ncpy = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n.toString().contains("SubstrateArraycopy")) {  // todo: fix this by including BasicArrayCopyNode.java (org.graalvm.replacements.*)
+                    ncpy += 1;
+                }
+            }
+        }
+        return ncpy;
     }
 
     private static int getNExceptions(List<Block> path) {
@@ -990,38 +1055,143 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return ncs;
     }
 
-    private static int getNSimpleInstr(List<Block> path, StructuredGraph.ScheduleResult schedule) {  // LASTEST scheduling is important (to avoid catching by phi)
+    // LASTEST scheduling is important (to avoid catching by phi)
+    private static int getNConstNodes(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
-        int nsimple = 0;
+        int nconst = 0;
         for (Block b : path) {
             for (Node n : schedule.nodesFor(b)) {
-                if (n instanceof ConstantNode || n instanceof BinaryNode || n instanceof LogicNode || n instanceof TernaryNode || n instanceof UnaryNode) {
-                    nsimple++;
+                if (n instanceof ConstantNode) {
+                    nconst++;
                 }
             }
         }
-        return nsimple;
+        return nconst;
     }
 
-    private static int getNAccessFields(List<Block> path) {
+    private static int getNLogicOperations(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
-        int naccf = 0;
+        int nconst = 0;
         for (Block b : path) {
-            for (Node n : b.getNodes()) {
-                if (n instanceof AccessFieldNode) {
-                    naccf++;
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof LogicNode) {
+                    nconst++;
                 }
             }
         }
-        return naccf;
+        return nconst;
     }
 
+    private static int getNUnaryOperations(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null) {
+            return 0;
+        }
+        int nuna = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof UnaryNode) {
+                    nuna++;
+                }
+            }
+        }
+        return nuna;
+    }
 
-    private static int getNMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static int getNBinaryOperations(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null) {
+            return 0;
+        }
+        int nbin = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof BinaryNode) {
+                    nbin++;
+                }
+            }
+        }
+        return nbin;
+    }
+
+    private static int getNTernaryOperations(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null) {
+            return 0;
+        }
+        int nter = 0;
+        for (Block b : path) {
+            for (Node n : schedule.nodesFor(b)) {
+                if (n instanceof TernaryNode) {
+                    nter++;
+                }
+            }
+        }
+        return nter;
+    }
+
+    private static int getNStaticLoadFields(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nstaticload = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof LoadFieldNode && ((LoadFieldNode) n).isStatic()) {
+                    nstaticload++;
+                }
+            }
+        }
+        return nstaticload;
+    }
+
+    private static int getNInstanceLoadFields(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ninstload = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof LoadFieldNode && !((LoadFieldNode) n).isStatic()) {
+                    ninstload++;
+                }
+            }
+        }
+        return ninstload;
+    }
+
+    private static int getNStaticStoreFields(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int nstaticstore = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof StoreFieldNode && ((StoreFieldNode) n).isStatic()) {
+                    nstaticstore++;
+                }
+            }
+        }
+        return nstaticstore;
+    }
+
+    private static int getNInstanceStoreFields(List<Block> path) {
+        if (path == null) {
+            return 0;
+        }
+        int ninststore = 0;
+        for (Block b : path) {
+            for (Node n : b.getNodes()) {
+                if (n instanceof StoreFieldNode && !((StoreFieldNode) n).isStatic()) {
+                    ninststore++;
+                }
+            }
+        }
+        return ninststore;
+    }
+
+    private static int getNRawMemoryAccess(List<Block> path, StructuredGraph.ScheduleResult schedule) {
         if (path == null) {
             return 0;
         }
