@@ -22,18 +22,17 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-package org.graalvm.compiler.phases.common;
+package com.oracle.svm.hosted.phases;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Stack;
+import java.util.*;
 import java.util.stream.Collectors;
 
+import com.oracle.svm.hosted.meta.HostedMethod;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -60,6 +59,10 @@ import org.graalvm.compiler.options.OptionType;
 import org.graalvm.compiler.phases.BasePhase;
 import org.graalvm.compiler.phases.graph.ReentrantBlockIterator;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
+import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
+import org.graalvm.compiler.replacements.nodes.*;
+
+import static java.util.Arrays.*;
 
 /***
  * In order to estimate the probabilities for each of the control splits branches in the Graal's IR graph, first of all, we need to parse important features of each of them.
@@ -490,6 +493,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             String name = graph.method().getName();
 
             writerAttr.printf("%d,\"%s\",%s,%s", graphId, name, head.getEndNode().toString(), head);
+            int depth = getCSDepth(cs, splits);
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
@@ -507,6 +511,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NLoops: [0][0]");
                     writerAttr.printf("; NLoopExits: [1][0]");
                     writerAttr.printf("; NControlSplits: [0][0]");
+                    writerAttr.printf("; CSDepth: [%d][%d]", depth, depth);
                     writerAttr.printf("; NInvoke: [0][0]");
                     writerAttr.printf("; NAllocations: [0][0]");
                     writerAttr.printf("; NMonitorEnter: [0][0]");
@@ -543,6 +548,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NLoops: [%d][%d]", getNLoops(sonPath), getNLoops(pinnedPath));
                     writerAttr.printf("; NLoopExits: [%d][%d]", getNLoopExits(sonPath), getNLoopExits(pinnedPath));
                     writerAttr.printf("; NControlSplits: [%d][%d]", getNControlSplits(sonPath), getNControlSplits(pinnedPath));
+                    writerAttr.printf("; CSDepth: [%d][%d]", depth, depth);
                     writerAttr.printf("; NInvoke: [%d][%d]", getNInvoke(sonPath), getNInvoke(pinnedPath));
                     writerAttr.printf("; NAllocations: [%d][%d]", getNAllocations(sonPath), getNAllocations(pinnedPath));
                     writerAttr.printf("; NMonitorEnter: [%d][%d]", getNMonitorEnter(sonPath), getNMonitorEnter(pinnedPath));
@@ -886,6 +892,22 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return ncs;
     }
 
+    private static int getCSDepth(ControlSplit cs, Stack<ControlSplit> splits) {
+        int depth = 0;
+        Block head = cs.getBlock();
+        List<Block> pathToBlock = cs.getPathToBlock();
+
+        for (ControlSplit tmpCs : splits) {
+            if (!tmpCs.finished()) {
+                if (pathToBlock == null || pathToBlock.size() == 0 || !tmpCs.areInTails(pathToBlock.get(0).getBeginNode())) {  // todo: fix this by gentleman solution
+                    depth++;
+                }
+            }
+            pathToBlock = tmpCs.getPathToBlock();
+        }
+        return depth;
+    }
+
     private static int getNInvoke(List<Block> path) {
         if (path == null) {
             return 0;
@@ -936,7 +958,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
         int nexit = 0;
         for (Block b : path) {
-            for (Node n : b.getNodes()) {  // The {AccessMonitorNode} is the base class of both monitor acquisition and release.
+            for (Node n : b.getNodes()) {
                 if (n instanceof MonitorExitNode) {
                     nexit += 1;
                 }
@@ -982,8 +1004,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int ncmp = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n.toString().contains("ArrayEquals") || n.toString().contains("Arrays.compare")) {  // todo: fix this by including ArrayEqualsNode.java, ArrayRegionsEqualsNode.java, ArrayCompareToNode.java (org.graalvm.replacements.*)
+                if (n instanceof ArrayCompareToNode || n instanceof ArrayEqualsNode || n instanceof ArrayRegionEqualsNode ||
+                        (n instanceof InvokeNode && ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass() == java.util.Arrays.class &&
+                                ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getName().equals("compare"))) {
                     ncmp += 1;
+                }
+                if (n instanceof InvokeNode && ((InvokeNode) n).callTarget().targetName().contains("compare")) {
+                    System.out.println("cmp: " + (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod()));
+                    System.out.println("cmp parameters: " + Arrays.toString(((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getParameters()));
+                    System.out.println("cmp name: " + ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getName());
+                    System.out.println("cmp decl class: " + (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass()));
+                    try {
+                        System.out.println("NASAO SAM GA: "+Arrays.class.getMethod("compare", ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getParameterTypes()));
+                    } catch (NoSuchMethodException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
@@ -997,7 +1032,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int ncpy = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n.toString().contains("SubstrateArraycopy")) {  // todo: fix this by including BasicArrayCopyNode.java (org.graalvm.replacements.*)
+                if (n instanceof BasicArrayCopyNode || n instanceof ArrayCopyCallNode) {  // todo: caught method calls
                     ncpy += 1;
                 }
             }
@@ -1012,7 +1047,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nexc = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("Throwable") || (n instanceof ControlSinkNode) && n.toString().contains("ThrowBytecodeException")) {  // todo: fix this. Current version: Do i call a method from class Throwable? or name equality
+                // //(n instanceof BytecodeExceptionNode || n instanceof ThrowBytecodeExceptionNode) { //|| (n instanceof InvokeNode && ((InvokeNode)n).callTarget().targetMethod()==java.lang.Throwable.fillInStackTrace()) ){
+                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("Throwable") || (n instanceof ControlSinkNode) && n.toString().contains("ThrowBytecodeException")) {
                     nexc += 1;
                 }
             }
@@ -1032,7 +1068,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nass = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("AssertionError")) {  // todo: where the AssertioNode disappeared?
+                if (n instanceof AssertionNode || (n instanceof InvokeNode && (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass() == java.lang.AssertionError.class))) {
                     nass++;
                 }
             }
