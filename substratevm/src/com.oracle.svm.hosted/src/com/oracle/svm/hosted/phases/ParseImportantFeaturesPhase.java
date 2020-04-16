@@ -28,10 +28,14 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
+import java.lang.reflect.Executable;
+import java.lang.reflect.MalformedParametersException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 
+import com.oracle.svm.core.graal.nodes.ThrowBytecodeExceptionNode;
 import com.oracle.svm.hosted.meta.HostedMethod;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
@@ -50,6 +54,7 @@ import org.graalvm.compiler.nodes.calc.TernaryNode;
 import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
+import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
 import org.graalvm.compiler.nodes.java.*;
 import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -61,8 +66,6 @@ import org.graalvm.compiler.phases.graph.ReentrantBlockIterator;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
 import org.graalvm.compiler.replacements.nodes.*;
-
-import static java.util.Arrays.*;
 
 /***
  * In order to estimate the probabilities for each of the control splits branches in the Graal's IR graph, first of all, we need to parse important features of each of them.
@@ -535,6 +538,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NRawMemoryAccess: [0][0]");
                 } else {
                     List<Block> pinnedPath = pinnedPaths.get(sonHead);
+                    EconomicMap<String, Integer> sonData = getData(sonPath, schedule);
+                    EconomicMap<String, Integer> pinnedData = getData(pinnedPath, schedule);
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
                     writerAttr.printf("; NBlocks: [%d][%d]", getNBlocks(sonPath), getNBlocks(pinnedPath));
                     writerAttr.printf("; IRFixedNodeCount: [%d][%d]", getIRFixedNodeCount(sonPath), getIRFixedNodeCount(pinnedPath));
@@ -682,6 +687,275 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             if (reach.contains((AbstractMergeNode) thead))
                 return true;
         return false;
+    }
+
+    private static EconomicMap<String, Integer> getData(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+        if (path == null)
+            return null;
+        EconomicMap<String, Integer> data = EconomicMap.create(Equivalence.IDENTITY);
+        int nblocks = path.size();  // N. Blocks
+        int nfixed = 0;             // IR Fixed Node Count
+        int nfloat = 0;             // IR Floating Node Count
+        int ecycles = 0;            // Estimated CPU Cycles
+        int eassembly = 0;          // Estimated Assembly Size
+        int necpucheap = 0;         // N. Estimated CPU Cheap
+        int necpuexpns = 0;         // N. Estimated CPU Expensive
+        int loopdepth = path.get(0).getLoopDepth();  // Loop Depth
+        int maxloopdepth = 0;                        // Max Loop Depth
+        int nloops = 0;                              // N. Loops
+        int nloopexits = 0;                          // N. Loop Exits
+        int ncontrolsplits = 0;     // N. Control Splits
+        int ninvoke = 0;            // N. Invoke
+        int nalloc = 0;             // N. Allocations
+        int nexceptions = 0;        // N. Exceptions
+        int nassertions = 0;        // N. Assertions
+        int ncontrolsinks = 0;      // N. Control Sinks
+        int nmonenter = 0;          // N. Monitor Enter
+        int nmonexit = 0;           // N. Monitor Exit
+        int narrload = 0;           // N. Array Load
+        int narrstore = 0;          // N. Array Store
+        int narrcompare = 0;        // N. Array Compare
+        int narrcopy = 0;           // N. Array Copy
+        int nconst = 0;             // N. Const. Nodes
+        int nlogic = 0;             // N. Logic Op.
+        int nunary = 0;             // N. Unary Op.
+        int nbinary = 0;            // N. Binary Op.
+        int nternary = 0;           // N. Ternary Op.
+        int nstaticload = 0;        // N. Static Load Fields
+        int ninstload = 0;          // N. Instance Load Fields
+        int nstaticstore = 0;       // N. Static Store Fields
+        int ninststore = 0;         // N. Instance Store Fields
+        int nrawmemaccess = 0;      // N. Raw Memory Access
+
+        for (Block block : path) {
+            for (Node node : schedule.nodesFor(block)) {
+                // IR Fixed Node Count
+                if (node instanceof FixedNode) {
+                    nfixed++;
+                }
+
+                // IR Floating Node Count
+                if (node instanceof FloatingNode) {
+                    nfloat++;
+                }
+
+                // Estimated CPU Cycles
+                ecycles += __castNodeCycles(node.estimatedNodeCycles());
+
+                // Estimated Assembly Size
+                eassembly += __castNodeSize(node.estimatedNodeSize());
+
+                // N. Estimated CPU Cheap
+                if (node.estimatedNodeCycles() == NodeCycles.CYCLES_0 || node.estimatedNodeCycles() == NodeCycles.CYCLES_1) {
+                    necpucheap++;
+                }
+
+                // N. Estimated CPU Expensive
+                if (node.estimatedNodeCycles() == NodeCycles.CYCLES_1024 || node.estimatedNodeCycles() == NodeCycles.CYCLES_512 || node.estimatedNodeCycles() == NodeCycles.CYCLES_256 || node.estimatedNodeCycles() == NodeCycles.CYCLES_128 || node.estimatedNodeCycles() == NodeCycles.CYCLES_64) {
+                    necpuexpns++;
+                }
+
+                // N. Loop Exits
+                if (node instanceof LoopExitNode) {
+                    nloopexits++;
+                }
+
+                // N. Invoke
+                if (node instanceof InvokeNode)
+                    ninvoke++;
+
+                // N. Allocations
+                if (node instanceof AbstractNewObjectNode) {  // The AbstractNewObjectNode is the base class for the new instance and new array nodes.
+                    nalloc++;
+                }
+
+                // N. Exceptions
+                if (node instanceof BytecodeExceptionNode || node instanceof ThrowBytecodeExceptionNode) {
+                    nexceptions++;
+                } else if (node instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+                    if (tmethod instanceof HostedMethod) {
+                        try {
+                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                            if (jmethod.getDeclaringClass() == java.lang.Throwable.class && jmethod.equals(Throwable.class.getMethod("fillInStackTrace"))) {
+                                nexceptions++;
+                            }
+                        } catch (NoSuchMethodException e) {
+                            e.printStackTrace();
+                        } catch (MalformedParametersException e) {
+                            // its okay if there is no such a method, just don't increase the counter
+                        }
+                    }
+                }
+
+                // N. Assertions
+                if (node instanceof AssertionNode) {
+                    nassertions++;
+                } else if (node instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+                    if (tmethod instanceof HostedMethod) {
+                        try {
+                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                            if (jmethod.getDeclaringClass() == java.lang.AssertionError.class) {
+                                nassertions++;
+                            }
+                        } catch (MalformedParametersException e) {
+                            // its okay if there is "Wrong number of parameters in MethodParameters attribute" just don't increase the counter
+                        }
+                    }
+                }
+
+                // N. Control Sinks
+                if (node instanceof ControlSinkNode) {
+                    ncontrolsinks++;
+                }
+
+                // N. Monitor Enter
+                if (node instanceof MonitorEnterNode || node instanceof RawMonitorEnterNode) {
+                    nmonenter++;
+                }
+
+                // N. Monitor Exit
+                if (node instanceof MonitorExitNode) {
+                    nmonexit++;
+                }
+
+                // N. Array Load
+                if (node instanceof LoadIndexedNode) {
+                    narrload++;
+                }
+
+                // N. Array Store
+                if (node instanceof StoreIndexedNode) {
+                    narrstore++;
+                }
+
+                // N. Array Compare
+                if (node instanceof ArrayCompareToNode || node instanceof ArrayEqualsNode || node instanceof ArrayRegionEqualsNode) {
+                    narrcompare++;
+                } else if (node instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+                    if (tmethod instanceof HostedMethod) {
+                        try {
+                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                            if (jmethod.getDeclaringClass() == Arrays.class && jmethod.equals(Arrays.class.getMethod("compare", jmethod.getParameterTypes()))) {
+                                narrcompare++;
+                            }
+                        } catch (NoSuchMethodException e) {
+                            // it's okay if there no such a method, just don't increase the counter
+                        } catch (MalformedParametersException e) {
+                            // it' okay if there no valid parameters
+                        }
+                    }
+                }
+
+                // N. Array Copy
+                if (node instanceof BasicArrayCopyNode || node instanceof ArrayCopyCallNode) {
+                    narrcopy++;
+                }
+
+                // N. Const Nodes
+                if (node instanceof ConstantNode) {
+                    nconst++;
+                }
+
+                // N. Logic Op.
+                if (node instanceof LogicNode) {
+                    nlogic++;
+                }
+
+                // N. Unary Op.
+                if (node instanceof UnaryNode) {
+                    nunary++;
+                }
+
+                // N. Binary Op.
+                if (node instanceof BinaryNode) {
+                    nbinary++;
+                }
+
+                // N. Ternary Op.
+                if (node instanceof TernaryNode) {
+                    nternary++;
+                }
+
+                // N. Static Load Fields
+                // N. Instance Load Fields
+                if (node instanceof LoadFieldNode) {
+                    if (((LoadFieldNode) node).isStatic()) {
+                        nstaticload++;
+                    } else {
+                        ninstload++;
+                    }
+                }
+
+                // N. Static Store Fields
+                // N. Instance Store Fields
+                if (node instanceof StoreFieldNode) {
+                    if (((StoreFieldNode) node).isStatic()) {
+                        nstaticstore++;
+                    } else {
+                        ninststore++;
+                    }
+                }
+
+                // N. Raw Memory Access
+                if (node instanceof MemoryAccess) {
+                    nrawmemaccess++;
+                }
+            }
+
+            // Max Loop Depth
+            if (block.getLoopDepth() > maxloopdepth) {
+                maxloopdepth = block.getLoopDepth();
+            }
+
+            // N. Loops
+            if (block.isLoopHeader()) {
+                nloops++;
+            }
+
+            // N. Control Splits
+            if (block.getEndNode() instanceof ControlSplitNode) {
+                ncontrolsplits++;
+            }
+        }
+
+        data.put("N. Blocks", nblocks);
+        data.put("IR Fixed Node Count", nfixed);
+        data.put("IR Floating Node Count", nfloat);
+        data.put("Estimated CPU Cycles", ecycles);
+        data.put("Estimated Assembly Size", eassembly);
+        data.put("N. Estimated CPU Cheap", necpucheap);
+        data.put("N. Estimated CPU Expns", necpuexpns);
+        data.put("Loop Depth", loopdepth);
+        data.put("Max Loop Depth", maxloopdepth);
+        data.put("N. Loops", nloops);
+        data.put("N. Loop Exits", nloopexits);
+        data.put("N. Control Splits", ncontrolsplits);
+        data.put("N. Invoke", ninvoke);
+        data.put("N. Allocations", nalloc);
+        data.put("N. Exceptions", nexceptions);
+        data.put("N. Assertions", nassertions);
+        data.put("N. Control Sinks", ncontrolsinks);
+        data.put("N. Monitor Enter", nmonenter);
+        data.put("N. Monitor Exit", nmonexit);
+        data.put("N. Array Load", narrload);
+        data.put("N. Array Store", narrstore);
+        data.put("N. Array Compare", narrcompare);
+        data.put("N. Array Copy", narrcopy);
+        data.put("N. Const. Nodes", nconst);
+        data.put("N. Logic Op.", nlogic);
+        data.put("N. Unary Op.", nunary);
+        data.put("N. Binary Op.", nbinary);
+        data.put("N. Ternary Op.", nternary);
+        data.put("N. Static Load Fields", nstaticload);
+        data.put("N. Instance Load Fields", ninstload);
+        data.put("N. Static Store Fields", nstaticstore);
+        data.put("N. Instance Store Fields", ninststore);
+        data.put("N. Raw Memory Access", nrawmemaccess);
+
+        return data;
     }
 
     /* Util functions that parse important attributes of blocks */
@@ -1004,20 +1278,22 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int ncmp = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n instanceof ArrayCompareToNode || n instanceof ArrayEqualsNode || n instanceof ArrayRegionEqualsNode ||
-                        (n instanceof InvokeNode && ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass() == java.util.Arrays.class &&
-                                ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getName().equals("compare"))) {
-                    ncmp += 1;
-                }
-                if (n instanceof InvokeNode && ((InvokeNode) n).callTarget().targetName().contains("compare")) {
-                    System.out.println("cmp: " + (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod()));
-                    System.out.println("cmp parameters: " + Arrays.toString(((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getParameters()));
-                    System.out.println("cmp name: " + ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getName());
-                    System.out.println("cmp decl class: " + (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass()));
+                if (n instanceof ArrayCompareToNode || n instanceof ArrayEqualsNode || n instanceof ArrayRegionEqualsNode) {
+                    ncmp++;
+                } else if (n instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) n).callTarget().targetMethod();
+                    if (!(tmethod instanceof HostedMethod)) {
+                        continue;
+                    }
                     try {
-                        System.out.println("NASAO SAM GA: "+Arrays.class.getMethod("compare", ((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getParameterTypes()));
+                        Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                        if (jmethod.getDeclaringClass() == Arrays.class && jmethod.equals(Arrays.class.getMethod("compare", jmethod.getParameterTypes()))) {
+                            ncmp++;
+                        }
                     } catch (NoSuchMethodException e) {
-                        e.printStackTrace();
+                        // it's okay if there no such a method, just don't increase the counter
+                    } catch (MalformedParametersException e) {
+                        // it' okay if there no valid parameters
                     }
                 }
             }
@@ -1032,7 +1308,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int ncpy = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n instanceof BasicArrayCopyNode || n instanceof ArrayCopyCallNode) {  // todo: caught method calls
+                if (n instanceof BasicArrayCopyNode || n instanceof ArrayCopyCallNode) {
                     ncpy += 1;
                 }
             }
@@ -1047,19 +1323,28 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nexc = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                // //(n instanceof BytecodeExceptionNode || n instanceof ThrowBytecodeExceptionNode) { //|| (n instanceof InvokeNode && ((InvokeNode)n).callTarget().targetMethod()==java.lang.Throwable.fillInStackTrace()) ){
-                if ((n instanceof InvokeNode) && ((InvokeNode) n).callTarget().targetName().contains("Throwable") || (n instanceof ControlSinkNode) && n.toString().contains("ThrowBytecodeException")) {
-                    nexc += 1;
+                if (n instanceof BytecodeExceptionNode || n instanceof ThrowBytecodeExceptionNode) {
+                    nexc++;
+                } else if (n instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) n).callTarget().targetMethod();
+                    if (!(tmethod instanceof HostedMethod)) {
+                        continue;
+                    }
+                    try {
+                        Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                        if (jmethod.getDeclaringClass() == java.lang.Throwable.class && jmethod.equals(Throwable.class.getMethod("fillInStackTrace"))) {
+                            nexc++;
+                        }
+                    } catch (NoSuchMethodException e) {
+                        e.printStackTrace();
+                    } catch (MalformedParametersException e) {
+                        // its okay if there is no such a method, just don't increase the counter
+                    }
                 }
             }
         }
         return nexc;
     }
-    // 1. SubstrateNewInstance, StoreField#Throwable.cause, StoreField#Throwable.stackTrace, StoreField#Throwable.suppressedExceptions, invoke#Throwable.fillInStackTrace (I throw ex)
-    // 2. ThrowBytecodeException
-    // 3. BytecodeException, SubstrateNewInstance, StoreField#Throwble...printStreamBarrier, FinalFieldBarrier, invoke#Throwable.printStackTrace (code throw ex)
-    // srcs:
-    // BytecodeExceptionNode.java, ThrowBytecodeExceptionNode.java (com.oracle.svm.core.graal.nodes;), ExceptionObjectNode
 
     private static int getNAssertions(List<Block> path) {
         if (path == null) {
@@ -1068,8 +1353,21 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int nass = 0;
         for (Block b : path) {
             for (Node n : b.getNodes()) {
-                if (n instanceof AssertionNode || (n instanceof InvokeNode && (((HostedMethod) ((InvokeNode) n).callTarget().targetMethod()).getJavaMethod().getDeclaringClass() == java.lang.AssertionError.class))) {
+                if (n instanceof AssertionNode) {
                     nass++;
+                } else if (n instanceof InvokeNode) {
+                    ResolvedJavaMethod tmethod = ((InvokeNode) n).callTarget().targetMethod();
+                    if (!(tmethod instanceof HostedMethod)) {
+                        continue;
+                    }
+                    try {
+                        Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+                        if (jmethod.getDeclaringClass() == java.lang.AssertionError.class) {
+                            nass++;
+                        }
+                    } catch (MalformedParametersException e) {
+                        // its okay if there is "Wrong number of parameters in MethodParameters attribute" just don't increase the counter
+                    }
                 }
             }
         }
