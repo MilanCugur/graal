@@ -33,6 +33,7 @@ import java.lang.reflect.MalformedParametersException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
+
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 import com.oracle.svm.core.graal.nodes.ThrowBytecodeExceptionNode;
@@ -233,23 +234,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
 
         // temporary writeout
-        for (Block b : schedule.getCFG().getBlocks())
-            System.err.println(b + ": " + schedule.nodesFor(b)); //+ "[" + b.getLoopDepth() + "]");
-        for (Node node : graph.getNodes()) {
-            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null"));
-            //if (node instanceof InvokeNode) {
-            //    System.err.println("CALL_TARGET: [" + ((InvokeNode) node).callTarget().targetName() + "]");
-            //}
-            //System.err.println("INPUTS: " + node.inputs().toString());
-            //for (Node ninput : node.inputs())
-            //    System.err.println("NODE: " + ninput + ":" + (ninput instanceof BinaryNode || ninput instanceof LogicNode || ninput instanceof TernaryNode || ninput instanceof UnaryNode));
-            //if (node instanceof AbstractMergeNode) {
-            //    System.err.println("ABMN: PHIS" + Arrays.toString(((AbstractMergeNode) node).phis().snapshot().toArray()));
-            //    System.err.println("ABMN: VALUE PHIS" + Arrays.toString(((AbstractMergeNode) node).valuePhis().snapshot().toArray()));
-            //    System.err.println("ABMN: MEMORY PHIS" + Arrays.toString(((AbstractMergeNode) node).memoryPhis().snapshot().toArray()));
-            //}
-        }
-        //System.err.println("\n\n");
+//        for (Block b : schedule.getCFG().getBlocks())
+//            System.err.println(b + ": " + schedule.nodesFor(b)); //+ "[" + b.getLoopDepth() + "]");
+//        for (Node node : graph.getNodes()) {
+//            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null"));
+//        }
         // end of temporary writeout
 
         // Graph traversal algorithm
@@ -575,6 +564,75 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     writerAttr.printf("; NStaticStoreFields: [%d][%d]", getNStaticStoreFields(sonPath), getNStaticStoreFields(pinnedPath));
                     writerAttr.printf("; NInstanceStoreFields: [%d][%d]", getNInstanceStoreFields(sonPath), getNInstanceStoreFields(pinnedPath));
                     writerAttr.printf("; NRawMemoryAccess: [%d][%d]", getNRawMemoryAccess(sonPath, schedule), getNRawMemoryAccess(pinnedPath, schedule));
+
+                    // CHECK
+                    if(getNBlocks(sonPath)!=sonData.get("N. Blocks") || (pinnedData!=null && getNBlocks(pinnedPath)!=pinnedData.get("N. Blocks")))
+                        System.out.println("1");
+                    if(getIRFixedNodeCount(sonPath)!=sonData.get("IR Fixed Node Count") || (pinnedData!=null && getIRFixedNodeCount(pinnedPath)!=pinnedData.get("IR Fixed Node Count")))
+                        System.out.println("2");
+                    if(getIRFloatingNodeCount(sonPath, schedule)!=sonData.get("IR Floating Node Count") || (pinnedData!=null && getIRFloatingNodeCount(pinnedPath, schedule)!=pinnedData.get("IR Floating Node Count")))
+                        System.out.println("3");
+                    if(getEstimatedCPUCycles(sonPath, schedule)!=sonData.get("Estimated CPU Cycles") || (pinnedData!=null && getEstimatedCPUCycles(pinnedPath, schedule)!=pinnedData.get("Estimated CPU Cycles")))
+                        System.out.println("4");
+                    if(getEstimatedAssemblySize(sonPath, schedule)!=sonData.get("Estimated Assembly Size") || (pinnedData!=null && getEstimatedAssemblySize(pinnedPath, schedule)!=pinnedData.get("Estimated Assembly Size")))
+                        System.out.println("5");
+                     if(getNEstimatedCPUCheap(sonPath, schedule)!=sonData.get("N. Estimated CPU Cheap") || (pinnedData!=null && getNEstimatedCPUCheap(pinnedPath, schedule)!=pinnedData.get("N. Estimated CPU Cheap")))
+                         System.out.println("6");
+                    if(getNEstimatedCPUExpns(sonPath, schedule)!=sonData.get("N. Estimated CPU Expns") || (pinnedData!=null && getNEstimatedCPUExpns(pinnedPath, schedule)!=pinnedData.get("N. Estimated CPU Expns")))
+                        System.out.println("7");
+                    if(getLoopDepth(sonPath)!=sonData.get("Loop Depth") || (pinnedData!=null && getLoopDepth(pinnedPath)!=pinnedData.get("Loop Depth")))
+                        System.out.println("8");
+                    if(getMaxLoopDepth(sonPath)!=sonData.get("Max Loop Depth") || (pinnedData!=null && getMaxLoopDepth(pinnedPath)!=pinnedData.get("Max Loop Depth")))
+                        System.out.println("9");
+                    if(getNLoops(sonPath)!=sonData.get("N. Loops") || (pinnedData!=null && getNLoops(pinnedPath)!=pinnedData.get("N. Loops")))
+                        System.out.println("10");
+                    if(getNLoopExits(sonPath)!=sonData.get("N. Loop Exits") || (pinnedData!=null && getNLoopExits(pinnedPath)!=pinnedData.get("N. Loop Exits")))
+                        System.out.println("11");
+                    if(getNControlSplits(sonPath)!=sonData.get("N. Control Splits") || (pinnedData!=null && getNControlSplits(pinnedPath)!=pinnedData.get("N. Control Splits")))
+                        System.out.println("12");
+                    if(getNInvoke(sonPath)!=sonData.get("N. Invoke") || (pinnedData!=null && getNInvoke(pinnedPath)!=pinnedData.get("N. Invoke")))
+                        System.out.println("13");
+                    if(getNAllocations(sonPath)!=sonData.get("N. Allocations") || (pinnedData!=null && getNAllocations(pinnedPath)!=pinnedData.get("N. Allocations")))
+                        System.out.println("14");
+                    if(getNMonitorEnter(sonPath)!=sonData.get("N. Monitor Enter") || (pinnedData!=null && getNMonitorEnter(pinnedPath)!=pinnedData.get("N. Monitor Enter")))
+                        System.out.println("15");
+                    if(getNMonitorExit(sonPath)!=sonData.get("N. Monitor Exit") || (pinnedData!=null && getNMonitorExit(pinnedPath)!=pinnedData.get("N. Monitor Exit")))
+                        System.out.println("16");
+                    if(getNArrayLoad(sonPath)!=sonData.get("N. Array Load") || (pinnedData!=null && getNArrayLoad(pinnedPath)!=pinnedData.get("N. Array Load")))
+                        System.out.println("17");
+                    if(getNArrayStore(sonPath)!=sonData.get("N. Array Store") || (pinnedData!=null && getNArrayStore(pinnedPath)!=pinnedData.get("N. Array Store")))
+                        System.out.println("18");
+                    if(getNArrayCompare(sonPath)!=sonData.get("N. Array Compare") || (pinnedData!=null && getNArrayCompare(pinnedPath)!=pinnedData.get("N. Array Compare")))
+                        System.out.println("19");
+                    if(getNArrayCopy(sonPath)!=sonData.get("N. Array Copy") || (pinnedData!=null && getNArrayCopy(pinnedPath)!=pinnedData.get("N. Array Copy")))
+                        System.out.println("20");
+                    if(getNExceptions(sonPath)!=sonData.get("N. Exceptions") || (pinnedData!=null && getNExceptions(pinnedPath)!=pinnedData.get("N. Exceptions")))
+                        System.out.println("12");
+                    if(getNAssertions(sonPath)!=sonData.get("N. Assertions") || (pinnedData!=null && getNAssertions(pinnedPath)!=pinnedData.get("N. Assertions")))
+                        System.out.println("12");
+                    if(getNControlSinks(sonPath)!=sonData.get("N. Control Sinks") || (pinnedData!=null && getNControlSinks(pinnedPath)!=pinnedData.get("N. Control Sinks")))
+                        System.out.println("12");
+                    if(getNConstNodes(sonPath, schedule)!=sonData.get("N. Const. Nodes") || (pinnedData!=null && getNConstNodes(pinnedPath, schedule)!=pinnedData.get("N. Const. Nodes")))
+                        System.out.println("13");
+                    if(getNLogicOperations(sonPath, schedule)!=sonData.get("N. Logic Op.") || (pinnedData!=null && getNLogicOperations(pinnedPath, schedule)!=pinnedData.get("N. Logic Op.")))
+                        System.out.println("13");
+                    if(getNUnaryOperations(sonPath, schedule)!=sonData.get("N. Unary Op.") || (pinnedData!=null && getNUnaryOperations(pinnedPath, schedule)!=pinnedData.get("N. Unary Op.")))
+                        System.out.println("13");
+                    if(getNBinaryOperations(sonPath, schedule)!=sonData.get("N. Binary Op.") || (pinnedData!=null && getNBinaryOperations(pinnedPath, schedule)!=pinnedData.get("N. Binary Op.")))
+                        System.out.println("13");
+                    if(getNTernaryOperations(sonPath, schedule)!=sonData.get("N. Ternary Op.") || (pinnedData!=null && getNTernaryOperations(pinnedPath, schedule)!=pinnedData.get("N. Ternary Op.")))
+                        System.out.println("13");
+                    if(getNStaticLoadFields(sonPath)!=sonData.get("N. Static Load Fields") || (pinnedData!=null && getNStaticLoadFields(pinnedPath)!=pinnedData.get("N. Static Load Fields")))
+                        System.out.println("13");
+                    if(getNInstanceLoadFields(sonPath)!=sonData.get("N. Instance Load Fields") || (pinnedData!=null && getNInstanceLoadFields(pinnedPath)!=pinnedData.get("N. Instance Load Fields")))
+                        System.out.println("13");
+                    if(getNStaticStoreFields(sonPath)!=sonData.get("N. Static Store Fields") || (pinnedData!=null && getNStaticStoreFields(pinnedPath)!=pinnedData.get("N. Static Store Fields")))
+                        System.out.println("13");
+                    if(getNInstanceStoreFields(sonPath)!=sonData.get("N. Instance Store Fields") || (pinnedData!=null && getNInstanceStoreFields(pinnedPath)!=pinnedData.get("N. Instance Store Fields")))
+                        System.out.println("13");
+                    if(getNRawMemoryAccess(sonPath, schedule)!=sonData.get("N. Raw Memory Access") || (pinnedData!=null && getNRawMemoryAccess(pinnedPath, schedule)!=pinnedData.get("N. Raw Memory Access")))
+                        System.out.println("21");
+                    // CHECK END
                 }
             }
             writerAttr.printf("%n");
