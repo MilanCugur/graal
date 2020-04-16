@@ -47,7 +47,6 @@ import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
-import org.graalvm.compiler.nodeinfo.NodeSize;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
 import org.graalvm.compiler.nodes.calc.FloatingNode;
@@ -494,14 +493,17 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (sonHead instanceof LoopExitNode) {
                     writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
                     for(String attribute : sonData.getKeys()){
-                        if(attribute.equals("Loop Depth")){
-                            writerAttr.printf("; Loop Depth: [%d][0]", sonPath.get(0).getLoopDepth());
-                        }else if(attribute.equals("Max Loop Depth")){
-                            writerAttr.printf("; Max Loop Depth: [%d][0]", sonPath.get(0).getLoopDepth());
-                        }else if(attribute.equals("N. Loop Exits")){
-                            writerAttr.printf("; %s: [1][0]", attribute);
-                        }else{
-                            writerAttr.printf("; %s: [0][0]", attribute);
+                        switch (attribute) {
+                            case "Loop Depth":
+                            case "Max Loop Depth":
+                                writerAttr.printf("; %s: [%d][0]", attribute, sonPath.get(0).getLoopDepth());
+                                break;
+                            case "N. Loop Exits":
+                                writerAttr.printf("; %s: [1][0]", attribute);
+                                break;
+                            default:
+                                writerAttr.printf("; %s: [0][0]", attribute);
+                                break;
                         }
                     }
                 } else {
