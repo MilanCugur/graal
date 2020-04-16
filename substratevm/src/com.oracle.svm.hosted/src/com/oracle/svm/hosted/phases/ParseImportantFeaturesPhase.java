@@ -507,7 +507,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 } else {
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
                     EconomicMap<String, Integer> pinnedData = getData(pinnedPath, schedule);
-                    for(String attribute : sonData.getKeys())
+                    for(String attribute : sonData.getKeys())  // always preserves insertion order when iterating over keys
                         writerAttr.printf("; %s: [%d][%d]", attribute, sonData.get(attribute), pinnedData!=null ? pinnedData.get(attribute) : 0);
                 }
             }
@@ -674,10 +674,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
 
                 // Estimated CPU Cycles
-                ecycles += __castNodeCycles(node.estimatedNodeCycles());
+                ecycles += node.estimatedNodeCycles().value;
 
                 // Estimated Assembly Size
-                eassembly += __castNodeSize(node.estimatedNodeSize());
+                eassembly += node.estimatedNodeSize().value;
 
                 // N. Estimated CPU Cheap
                 if (node.estimatedNodeCycles() == NodeCycles.CYCLES_0 || node.estimatedNodeCycles() == NodeCycles.CYCLES_1) {
@@ -890,61 +890,5 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         data.put("N. Raw Memory Access", nrawmemaccess);
 
         return data;
-    }
-
-    private static int __castNodeCycles(NodeCycles ncyc) {
-        if (ncyc == NodeCycles.CYCLES_1) {
-            return 1;
-        } else if (ncyc == NodeCycles.CYCLES_2) {
-            return 2;
-        } else if (ncyc == NodeCycles.CYCLES_4) {
-            return 4;
-        } else if (ncyc == NodeCycles.CYCLES_8) {
-            return 8;
-        } else if (ncyc == NodeCycles.CYCLES_16) {
-            return 16;
-        } else if (ncyc == NodeCycles.CYCLES_32) {
-            return 32;
-        } else if (ncyc == NodeCycles.CYCLES_64) {
-            return 64;
-        } else if (ncyc == NodeCycles.CYCLES_128) {
-            return 128;
-        } else if (ncyc == NodeCycles.CYCLES_256) {
-            return 256;
-        } else if (ncyc == NodeCycles.CYCLES_512) {
-            return 512;
-        } else if (ncyc == NodeCycles.CYCLES_1024) {
-            return 1024;
-        } else {
-            return 0;  // CYCLES_UNSET, CYCLES_UNKNOWN, CYCLES_IGNORED, CYCLES_0
-        }
-    }
-
-    private static int __castNodeSize(NodeSize nsiz) {
-        if (nsiz == NodeSize.SIZE_1) {
-            return 1;
-        } else if (nsiz == NodeSize.SIZE_2) {
-            return 2;
-        } else if (nsiz == NodeSize.SIZE_4) {
-            return 4;
-        } else if (nsiz == NodeSize.SIZE_8) {
-            return 8;
-        } else if (nsiz == NodeSize.SIZE_16) {
-            return 16;
-        } else if (nsiz == NodeSize.SIZE_32) {
-            return 32;
-        } else if (nsiz == NodeSize.SIZE_64) {
-            return 64;
-        } else if (nsiz == NodeSize.SIZE_128) {
-            return 128;
-        } else if (nsiz == NodeSize.SIZE_256) {
-            return 256;
-        } else if (nsiz == NodeSize.SIZE_512) {
-            return 512;
-        } else if (nsiz == NodeSize.SIZE_1024) {
-            return 1024;
-        } else {
-            return 0;  // SIZE_UNSET, SIZE_UNKNOWN, SIZE_IGNORED, SIZE_0
-        }
     }
 }
