@@ -232,16 +232,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
 
-        // temporary writeout
-//        for (Block b : schedule.getCFG().getBlocks())
-//            System.err.println(b + ": " + schedule.nodesFor(b)); //+ "[" + b.getLoopDepth() + "]");
-//        for (Node node : graph.getNodes()) {
-//            System.err.println(node + ": " + (schedule.getNodeToBlockMap().get(node) != null ? schedule.getNodeToBlockMap().get(node).toString() : "null"));
-//        }
-        // end of temporary writeout
-
-        // Graph traversal algorithm
-
         Stack<ControlSplit> splits = new Stack<>();  // Active Control Splits
         List<EconomicMap<String, Object>> fsplits = new ArrayList<>();  // Finished Control Splits
 
