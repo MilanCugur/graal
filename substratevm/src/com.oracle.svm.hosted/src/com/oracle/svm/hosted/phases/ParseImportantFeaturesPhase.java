@@ -198,7 +198,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
             writer.printf("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head%n");
             writerAttr = new PrintWriter(new FileOutputStream(new File("./importantAttributes.csv")), true, StandardCharsets.US_ASCII);
-            writerAttr.printf("Graph Id, Source Function, Node Description, head, CD Depth%n");
+            writerAttr.printf("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes%n");
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
@@ -242,8 +242,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // Graph traversal algorithm
 
-        Stack<ControlSplit> splits = new Stack<>();  // Active control splits
-        List<EconomicMap<String, Object>> fsplits = new ArrayList<>();
+        Stack<ControlSplit> splits = new Stack<>();  // Active Control Splits
+        List<EconomicMap<String, Object>> fsplits = new ArrayList<>();  // Finished Control Splits
 
         ReentrantBlockIterator.BlockIteratorClosure<TraversalState> CSClosure = new ReentrantBlockIterator.BlockIteratorClosure<TraversalState>() {
             @Override
@@ -399,12 +399,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
 
-        appendCSAttributes(fsplits);
+        appendCSAttributes(fsplits);  // Append additional branching attributes information
 
-        for (EconomicMap<String, Object> fsplit : fsplits) {
-            flushToDb(fsplit);
+        for (int i = 0; i < fsplits.size(); i++) {
+            flushToDb(i, fsplits);
         }
-        fsplits.clear();
+
+        fsplits.clear();  // Clear data
     }
 
     private static boolean personalMerge(ControlSplit cs, AbstractMergeNode merge) {  // Are merge block (block starting with AbstractMergeNode merge) fully owned by Control split cs
@@ -486,7 +487,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
 
         // Write out important attributes; due to test compatibility maintain two versions
-        __sons = cs.getSons();
         EconomicMap<String, Object> data = EconomicMap.create(Equivalence.IDENTITY);
         data.put("cs", cs);
         data.put("pinnedPaths", pinnedPaths);
@@ -604,7 +604,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return false;
     }
 
-    private static EconomicMap<String, Integer> getData(List<Block> path, StructuredGraph.ScheduleResult schedule) {
+    private static EconomicMap<String, Integer> getData(List<Block> path, StructuredGraph.ScheduleResult schedule, List<EconomicMap<String, Object>> fsplits) {
         if (path == null)
             return null;
         EconomicMap<String, Integer> data = EconomicMap.create(Equivalence.IDENTITY);
@@ -619,6 +619,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         int maxloopdepth = 0;                        // Max Loop Depth
         int nloops = 0;                              // N. Loops
         int nloopexits = 0;                          // N. Loop Exits
+        int maxcsdepth = 0;         // Max CS Depth
         int ncontrolsplits = 0;     // N. Control Splits
         int ninvoke = 0;            // N. Invoke
         int nalloc = 0;             // N. Allocations
@@ -835,6 +836,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             if (block.getEndNode() instanceof ControlSplitNode) {
                 ncontrolsplits++;
             }
+
+            // Max CS Depth
+            if (block.getEndNode() instanceof ControlSplitNode) {
+                int tmpdepth = __getDepth(block, fsplits);
+                if (tmpdepth > maxcsdepth) {
+                    maxcsdepth = tmpdepth;
+                }
+            }
         }
 
         data.put("N. Blocks", nblocks);
@@ -848,6 +857,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         data.put("Max Loop Depth", maxloopdepth);
         data.put("N. Loops", nloops);
         data.put("N. Loop Exits", nloopexits);
+        data.put("Max CS Depth", maxcsdepth);
         data.put("N. Control Splits", ncontrolsplits);
         data.put("N. Invoke", ninvoke);
         data.put("N. Allocations", nalloc);
@@ -874,25 +884,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return data;
     }
 
-    private static void flushToDb(EconomicMap<String, Object> fsplit){
-        ControlSplit cs = (ControlSplit)fsplit.get("cs");
+    private static void flushToDb(int i, List<EconomicMap<String, Object>> fsplits) {
+        EconomicMap<String, Object> fsplit = fsplits.get(i);
+        ControlSplit cs = (ControlSplit) fsplit.get("cs");
         Block head = cs.getBlock();
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = (EconomicMap<AbstractBeginNode, List<Block>>)fsplit.get("pinnedPaths");
+        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = (EconomicMap<AbstractBeginNode, List<Block>>) fsplit.get("pinnedPaths");
         StructuredGraph graph = (StructuredGraph) fsplit.get("graph");
         StructuredGraph.ScheduleResult schedule = (StructuredGraph.ScheduleResult) fsplit.get("schedule");
-        int csdepth = (int)fsplit.get("CS Depth");
+        int csdepth = (int) fsplit.get("CS Depth");
+        int csfblocks = (int) fsplit.get("N. CS Father Blocks");
+        int csfnodesfix = (int) fsplit.get("N. CS Father Fixed Nodes");
+        int csfnodesfloat = (int) fsplit.get("N. CS Father Floating Nodes");
 
         synchronized (writerAttr) {
             long graphId = graph.graphId();
             String name = graph.method().getName();
 
-            writerAttr.printf("%d,\"%s\",%s,%s,%d", graphId, name, head.getEndNode().toString(), head, csdepth);
+            writerAttr.printf("%d,\"%s\",%s,%s,%d,%d,%d,%d", graphId, name, head.getEndNode().toString(), head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
             while (__sons.advance()) {
                 AbstractBeginNode sonHead = __sons.getKey();
                 List<Block> sonPath = __sons.getValue();
                 List<Block> pinnedPath = pinnedPaths.get(sonHead);
-                EconomicMap<String, Integer> sonData = getData(sonPath, schedule);
+                EconomicMap<String, Integer> sonData = getData(sonPath, schedule, fsplits);
 
                 if (sonHead instanceof LoopExitNode) {
                     writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
@@ -912,7 +926,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     }
                 } else {
                     writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
-                    EconomicMap<String, Integer> pinnedData = getData(pinnedPath, schedule);
+                    EconomicMap<String, Integer> pinnedData = getData(pinnedPath, schedule, fsplits);
                     for (String attribute : sonData.getKeys())  // always preserves insertion order when iterating over keys
                         writerAttr.printf("; %s: [%d][%d]", attribute, sonData.get(attribute), pinnedData != null ? pinnedData.get(attribute) : 0);
                 }
@@ -922,26 +936,60 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static void appendCSAttributes(List<EconomicMap<String, Object>> fsplits) {
+        // Append additional Control Splits attributes to already finished control splits fsplits
         int n = fsplits.size();
         List<EconomicSet<Block>> csdata = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            ControlSplit cs = (ControlSplit)fsplits.get(i).get("cs");
+        for (EconomicMap<String, Object> fsplit : fsplits) {
+            ControlSplit cs = (ControlSplit) fsplit.get("cs");
             csdata.add(__pathUtil(cs.getBlock(), cs.getSons()));
         }
+
+        // CS Depth
         for (int i = 0; i < n; i++) {
-            EconomicSet<Block> cs = csdata.get(i);  // current control split
-            int csdepth = 0;  // CS Depth
+            EconomicSet<Block> cs = csdata.get(i);  // current Control Split
+            int csdepth = 0;
 
             for (int j = i + 1; j < n; j++) {
-                if(compareSets(cs, csdata.get(j))){
-                    csdepth ++;
+                if (__compareSets(cs, csdata.get(j))) {
+                    csdepth++;
                 }
             }
             fsplits.get(i).put("CS Depth", csdepth);
         }
+
+        // N. CS Father Blocks
+        // N. CS Father Nodes
+        for (int i = 0; i < n; i++) {
+            StructuredGraph.ScheduleResult schedule = (StructuredGraph.ScheduleResult) fsplits.get(i).get("schedule");  // Current schedule
+            EconomicSet<Block> cs = csdata.get(i);  // current Control Split
+            int fblocks = 0;
+            int ffixnodes = 0;
+            int ffloatnodes = 0;
+
+            for (int j = i + 1; j < n; j++) {
+                if (__compareSets(cs, csdata.get(j))) {  // father: the first who contains me
+                    for (Block block : csdata.get(j)) {
+                        fblocks++;
+                        for (Node node : schedule.nodesFor(block)) {
+                            if (node instanceof FixedNode) {
+                                ffixnodes++;
+                            }
+                            if (node instanceof FloatingNode) {
+                                ffloatnodes++;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            fsplits.get(i).put("N. CS Father Blocks", fblocks);
+            fsplits.get(i).put("N. CS Father Fixed Nodes", ffixnodes);
+            fsplits.get(i).put("N. CS Father Floating Nodes", ffloatnodes);
+        }
     }
 
     private static EconomicSet<Block> __pathUtil(Block head, UnmodifiableMapCursor<AbstractBeginNode, List<Block>> sons) {
+        // Return set of all Control Split blocks
         EconomicSet<Block> pth = EconomicSet.create(Equivalence.DEFAULT);
         pth.add(head);
         while (sons.advance()) {
@@ -950,13 +998,24 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return pth;
     }
 
-    private static boolean compareSets(EconomicSet<Block> X, EconomicSet<Block> Y) {
-        // return true if X < Y
+    private static boolean __compareSets(EconomicSet<Block> X, EconomicSet<Block> Y) {
+        // whether X is a subset of Y?
         for (Block b : X) {
             if (!Y.contains(b)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static int __getDepth(Block head, List<EconomicMap<String, Object>> fsplits) {
+        for (EconomicMap<String, Object> fsplit : fsplits) {
+            ControlSplit tmpcs = (ControlSplit) fsplit.get("cs");
+            if (tmpcs.getBlock() == head) {
+                return (int) fsplit.get("CS Depth");
+            }
+        }
+        System.out.println("ParseImportantFeaturesError: son not founded");
+        return -1;
     }
 }
