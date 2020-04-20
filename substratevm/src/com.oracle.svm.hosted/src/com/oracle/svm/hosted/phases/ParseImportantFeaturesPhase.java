@@ -195,16 +195,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     private static PrintWriter writer;
     private static String PATH;
 
-    static { // Static writer used for dumping important features to database (currently .csv file)
-        try {
-            writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
-            writer.printf("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head%n");
-            PATH = "./importantAttributes"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
-            boolean dirExist = new File(PATH).mkdir();
-            assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
-        } catch (FileNotFoundException e) {
-            System.exit(1);  // Can't open a database file.
-        }
+    static {
+        PATH = "./importantAttributes"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
+        boolean dirExist = new File(PATH).mkdir();
+        assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
     }
 
     public ParseImportantFeaturesPhase(String methodRegex) {
@@ -452,27 +446,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // In the case of the switch control split: eventually do a sons concatenation and fill up pinned path for every son
         EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = __sonsConcat(cs);
 
-        // Write out blocks
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-        synchronized (writer) {
-            long graphId = graph.graphId();
-            int nodeBCI = head.getEndNode().getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();  // -9999 represent error BCI code
-            String name = graph.method().getName();
-
-            writer.printf("%d,\"%s\",%s,%d,%d,%d,%s", graphId, name, head.getEndNode().toString(), card, head.getEndNode().getId(), nodeBCI, head);
-            while (__sons.advance()) {
-                AbstractBeginNode sonHead = __sons.getKey();
-                List<Block> sonPath = __sons.getValue();
-                if (sonHead instanceof LoopExitNode)
-                    writer.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
-                else {
-                    List<Block> pinnedPath = pinnedPaths.get(sonHead);  // pinnedPath represents eventually path from the sons end to the end of that path (a path that comes after final sons merge node - asymmetric ending switch case)
-                    writer.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath); // write sons path to database
-                }
-            }
-            writer.printf("%n");
-        }
-
         // Write out important attributes - put finished control split to the database
         EconomicMap<String, Object> data = EconomicMap.create(Equivalence.IDENTITY);
         data.put("cs", cs);
@@ -498,7 +471,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Create a full cs path
         newPath = new ArrayList<>(cs.getPathToBlock());
         newPath.add(head);
-        __sons = cs.getSons();
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
         while (__sons.advance()) {
             List<Block> sonPath = __sons.getValue();
             newPath.addAll(sonPath);
