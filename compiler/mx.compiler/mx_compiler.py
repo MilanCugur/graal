@@ -540,13 +540,13 @@ def jvmci_ci_version_gate_runner(tasks):
     with Task('JVMCI_CI_VersionSyncCheck', tasks, tags=[mx_gate.Tags.style]) as t:
         if t: verify_jvmci_ci_versions([])
 
-def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False):
+def _gate_function_check(groundTruthData, attributesPath, resultData, verbose=False):
     """
     Compare groundTruthData with the parsedData.
     Return True/False as general test results. Detailed information is written to resultData.
     """
     assert groundTruthData.endswith(".json")  # Check file extensions
-    assert parsedData.endswith(".csv")
+    assert os.path.isdir(attributesPath)
     assert resultData.endswith(".csv")
 
     check_source = None  # Ground truth source function
@@ -581,49 +581,52 @@ def _gate_function_check(groundTruthData, parsedData, resultData, verbose=False)
         print(elem)
 
     valid = True  # Assume that source functions Control Splits are valid parsed
-    with open(parsedData, mode='r') as csv_read, open(resultData, mode='w') as csv_write:
-        csv_reader = csv.DictReader(csv_read)
-        csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'Node BCI', 'head', 'Valid Control Split'])
-        csv_writer.writeheader()
+    csv_write = open(resultData, mode='w')
+    csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'head', 'Valid Control Split'])
+    csv_writer.writeheader()
+    for parsedData in os.listdir(attributesPath):
+        assert parsedData.endswith(".csv")
+        with open(os.path.join(attributesPath, parsedData), mode='r') as csv_read:
+            csv_reader = csv.DictReader(csv_read)
 
-        for elem in csv_reader:  # Go through input .csv file (Control Splits information)
-            _id = elem['Graph Id']
-            _source = elem['Source Function']
-            _head = elem['head']
-            _nodeId = elem['Node Id']
-            _nodeType = re.split("\|", elem['Node Description'])[1]
-            _nodeBCI = elem['Node BCI']
-            if verbose:
-                print('Validating Control Split: {:17s} {:7s} {:7s} {:36s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
+            for elem in csv_reader:  # Go through input .csv file (Control Splits information)
+                _id = elem['Graph Id']
+                _source = elem[' Source Function']
+                _head = elem[' head']
+                _nodeId = re.split("\|", elem[' Node Description'])[0]
+                _nodeType = re.split("\|", elem[' Node Description'])[1]
+                if verbose:
+                    print('Validating Control Split: {:17s} {:7s} {:7s} {:36s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
 
-            orign = None
-            if (_source, _head, _nodeId, _nodeType) in check_data:
-                orign = check_data[(_source, _head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+                orign = None
+                if (_source, _head, _nodeId, _nodeType) in check_data:
+                    orign = check_data[(_source, _head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+                else:
+                    mx.log_error('\nParse Important Features Phase gate check error: Control Split {} not matched with the ground truth {} file.'.format((_source, _head, _nodeId, _nodeType), groundTruthData))
+                    return False
+
+                csValid = True # Assume that current Control Split blocks are valid parsed
+                for cs in elem[None]:
+                    tmp = cs.split(";")[0].split('][')
+                    if len(tmp)!=2:
+                        mx.log_error("File {} corrupted (branch tail information not provided).".format(parsedData))
+                    son, tail = tmp[0], tmp[1]
+                    son = frozenset(map(lambda x: x.strip(), son.replace('[','').replace(']', '').split(",")))  # Appropriate son's blocks
+                    tail = frozenset(map(lambda x: x.strip(), tail.replace('[','').replace(']', '').split(",")))  # Appropriate tail blocks
+                    branchValid = (son, tail) in orign  # Compare branch data: (branch_blocks, pinned_tail_blocks)
+                    if not branchValid:
+                        csValid = False
+                csv_writer.writerow({'Graph Id':_id, 'Source Function':_source, 'Node Description':str(nodeId)+"|"+_nodeType, 'Node Id':_nodeId, 'head':_head, 'Valid Control Split':csValid})
+                if not csValid:
+                    valid = False
+                if verbose:
+                    print(csValid)
+
+            if valid:
+                csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'True'})
             else:
-                mx.log_error('\nParse Important Features Phase gate check error: Control Split {} not matched with the ground truth {} file.'.format((_source, _head, _nodeId, _nodeType), groundTruthData))
-                return False
-
-            csValid = True # Assume that current Control Split blocks are valid parsed
-            for cs in elem[None]:
-                tmp = cs.split('][')
-                if len(tmp)!=2:
-                    mx.log_error("File {} corrupted (branch tail information not provided).".format(parsedData))
-                son, tail = tmp[0], tmp[1]
-                son = frozenset(map(lambda x: x.strip(), son.replace('[','').replace(']', '').split(",")))  # Appropriate son's blocks
-                tail = frozenset(map(lambda x: x.strip(), tail.replace('[','').replace(']', '').split(",")))  # Appropriate tail blocks
-                branchValid = (son, tail) in orign  # Compare branch data: (branch_blocks, pinned_tail_blocks)
-                if not branchValid:
-                    csValid = False
-            csv_writer.writerow({'Graph Id':_id, 'Source Function':_source, 'Node Description':str(nodeId)+"|"+_nodeType, 'Node Id':_nodeId, 'Node BCI':_nodeBCI, 'head':_head, 'Valid Control Split':csValid})
-            if not csValid:
-                valid = False
-            if verbose:
-                print(csValid)
-            
-        if valid:
-            csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'True'})
-        else:
-            csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'False'})
+                csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'False'})
+    csv_write.close()
 
     return valid
 
@@ -688,7 +691,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
             mx.log("Starting of testing Parsing Important Features Phase.")
             mx.warn("Ensure you have correct version of \"native-image\" tool built.")
             os.chdir(features_dir)
-            resultDir = './FeaturesTesting_{}.csv'.format(str(datetime.datetime.now()).replace(' ', '_'))
+            resultDir = 'FeaturesTesting_{}.csv'.format(str(datetime.datetime.now()).replace(' ', '_'))
             r = open(resultDir, 'w')
             csv_writer = csv.DictWriter(r, fieldnames=['Test', 'Result', 'Timestamp'])
             csv_writer.writeheader()
@@ -724,8 +727,16 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                         mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:+ParseImportantFeatures', '-H:MethodFilter='+','.join(funcnames)]))
                         mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:+ParseImportantFeatures', '-H:MethodFilter='+','.join(funcnames)])
 
+                        # find newest attributes folder
+                        files = os.listdir(".")
+                        paths = [os.path.join(root, basename) for basename in files]
+                        paths = filter(lambda x: os.path.isdir(x) and "importantAttributes" in x.split(os.path.sep)[-1], paths)
+                        attributes = max(paths, key=os.path.getctime)
+                        if attributes is None:
+                            mx.log_error("Parse Important Features Test Failed: cannot find attributes data.")
+
                         mx.log('Compare generated results with the ground truth..')
-                        if _gate_function_check(filename+'.json', 'importantFeatures.csv', 'importantResults_'+filename+'.csv', True):
+                        if _gate_function_check(filename+'.json', attributes, 'importantResults_'+filename+'.csv', True):
                             print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
                             csv_writer.writerow({'Test':filename, 'Result':'True', 'Timestamp':str(datetime.datetime.now())})
                         else:
@@ -740,8 +751,6 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
                 mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
             r.close()
             mx.log('Parse Important Features Tests: Results are written to {}.'.format(os.path.join(features_dir, resultDir)))
-
-
 
 def compiler_gate_benchmark_runner(tasks, extraVMarguments=None, prefix=''):
     # run selected DaCapo benchmarks

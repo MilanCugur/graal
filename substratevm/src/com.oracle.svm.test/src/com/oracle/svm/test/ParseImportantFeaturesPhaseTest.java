@@ -33,13 +33,8 @@ import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.junit.Test;
 
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.io.*;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -81,22 +76,24 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         // Parse .csv
         int nerror = 0;
         try {
-            BufferedReader csv = new BufferedReader(new FileReader("./importantFeatures.csv"));
+            File attributes = __getAttributes(snippet);
+            //System.out.println("Working with attributes: " + attributes);
+            assert attributes != null : "ParseImportantFeaturesPhaseTest: cannot find .csv attributes";
+            BufferedReader csv = new BufferedReader(new FileReader(attributes));
             String line;
             while ((line = csv.readLine()) != null) {
-                if (line.equals("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head"))  // skip header line
+                if (line.equals("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
                     continue;
                 String[] data = line.split(",(?!\\s)");
                 String SourceFunction = data[1].replaceAll("\"", "");
-                if (!SourceFunction.equals(snippet))
-                    continue; //  test only target function "ParseImportantFeaturesPhaseTest Error: Source function does not match."
+                assert SourceFunction.equals(snippet) : "ParseImportantFeaturesPhaseTest Error: Source function does not match.";
                 String NodeDescription = data[2];
-                String head = data[6];
+                String head = data[3];
                 assert gt.containsKey(NodeDescription + "--" + head) : "ParseImportantFeaturesPhaseError: wrong Control Split in .csv file.";
                 HashSet<String> sons = gt.get(NodeDescription + "--" + head);
 
-                for (int index = 7; index < data.length; index++) {
-                    String[] branchData = data[index].split(Pattern.quote("]["));
+                for (int index = 8; index < data.length; index++) {
+                    String[] branchData = data[index].split(";")[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
                     String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
                     String tail = __sortPath(branchData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
@@ -122,6 +119,32 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         }
 
         assertTrue("Test " + snippet + " failed.", nerror == 0);
+    }
+
+    private File __getAttributes(String snippet) {
+        // Return attributes file with respect to the snippet function name
+        File directory = new File(".");
+        File[] files = directory.listFiles();
+        List<File> filesFeatures = new ArrayList<>();
+        for (File file : files) {
+            if (file.isDirectory() && file.getName().contains("importantAttributes")) {
+                filesFeatures.add(file);
+            }
+        }
+
+        if (filesFeatures.size() == 0) return null;
+        File min = Collections.min(filesFeatures, (o1, o2) -> Long.valueOf(o2.lastModified()).compareTo(o1.lastModified()));
+        if (min == null)
+            return null;
+        List<File> targetData = new ArrayList<>();
+        for (File file : min.listFiles()) {
+            if (file.isFile() && file.getName().contains("importantAttributes_" + snippet + "_")) {
+                targetData.add(file);
+            }
+        }
+        if (targetData.size() != 1)
+            return null;
+        return targetData.get(0);
     }
 
     private String __sortPath(String path) {  // sorte blocks if there are blocks in path
