@@ -196,7 +196,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     private static String PATH;
 
     static {
-        PATH = "./importantAttributes"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
+        PATH = "./importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
         boolean dirExist = new File(PATH).mkdir();
         assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
     }
@@ -377,12 +377,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 ControlSplit fatherCS, tailCS;
                 fatherCS = findControlSplitFather(splits, newPath);
                 tailCS = findTailFather(splits, newPath);
-                if (fatherCS != null)
+                if (fatherCS != null) {
                     fatherCS.addASon(newPath);
-                else if (tailCS != null)
+                } else if (tailCS != null) {
                     tailCS.setTailBlocks(newPath);
-                else
-                    continue; // A son not added; no one waiting for this path as a son; continue to flushing splits
+                }  // Else: no one waiting for this path as a son/tail; continue to flushing splits
             }
         }
 
@@ -434,19 +433,16 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule, List<EconomicMap<String, Object>> fsplits) {
-        // Pop element from the top of a stack and write it out to the database; return integrated path
+        // Pop element from the top of a stack and append it to the list of finished Control Splits; return integrated path
         assert splits.size() > 0 && splits.peek().finished() : "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
-        List<Block> newPath;
 
         // pop finished cs
         ControlSplit cs = splits.pop();
-        Block head = cs.getBlock();
-        int card = head.getSuccessorCount();
 
         // In the case of the switch control split: eventually do a sons concatenation and fill up pinned path for every son
         EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = __sonsConcat(cs);
 
-        // Write out important attributes - put finished control split to the database
+        // Write out important attributes - add finished control split to the list of finished control split
         EconomicMap<String, Object> data = EconomicMap.create(Equivalence.IDENTITY);
         data.put("cs", cs);
         data.put("pinnedPaths", pinnedPaths);
@@ -455,8 +451,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         fsplits.add(data);
 
         // Parse tail
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
         List<Block> tail = new ArrayList<>();
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __tails = cs.getTails();
         while (__tails.advance()) {
             AbstractBeginNode csNode = __tails.getKey();
             List<Block> csBlocks = __tails.getValue();
@@ -469,8 +465,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
 
         // Create a full cs path
-        newPath = new ArrayList<>(cs.getPathToBlock());
-        newPath.add(head);
+        List<Block> newPath = new ArrayList<>(cs.getPathToBlock());
+        newPath.add(cs.getBlock());
         UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
         while (__sons.advance()) {
             List<Block> sonPath = __sons.getValue();
@@ -564,12 +560,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return false;
     }
 
-    private static void flushToDb(List<EconomicMap<String, Object>> fsplits, String methodName, long graphId){
+    private static void flushToDb(List<EconomicMap<String, Object>> fsplits, String methodName, long graphId) {
         appendAdditionalAttributesUtil(fsplits);
 
         PrintWriter writerAttr = null;
         try {
-            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH,"importantAttributes_" + methodName + "_" + graphId+ ".csv")), true, StandardCharsets.US_ASCII);
+            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + methodName + "_" + graphId + ".csv")), true, StandardCharsets.US_ASCII);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -653,7 +649,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return true;
     }
 
-    private static void flushToDbUtil(int i, List<EconomicMap<String, Object>> fsplits, PrintWriter writerAttr ) {
+    private static void flushToDbUtil(int i, List<EconomicMap<String, Object>> fsplits, PrintWriter writerAttr) {
         EconomicMap<String, Object> fsplit = fsplits.get(i);
         ControlSplit cs = (ControlSplit) fsplit.get("cs");
         Block head = cs.getBlock();
