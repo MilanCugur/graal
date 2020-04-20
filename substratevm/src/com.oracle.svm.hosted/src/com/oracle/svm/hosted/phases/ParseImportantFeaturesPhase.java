@@ -200,7 +200,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             writer = new PrintWriter(new FileOutputStream(new File("./importantFeatures.csv")), true, StandardCharsets.UTF_8);
             writer.printf("Graph Id,Source Function,Node Description,Cardinality,Node Id,Node BCI,head%n");
             PATH = "./importantAttributes"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
-            new File(PATH).mkdir();
+            boolean dirExist = new File(PATH).mkdir();
+            assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
         } catch (FileNotFoundException e) {
             System.exit(1);  // Can't open a database file.
         }
@@ -221,7 +222,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     protected void run(StructuredGraph graph, CoreProviders context) {
         if (methodRegex != null) {  // If Method Filter is not specified, parse all functions, otherwise parse only desired function[s]
             MethodFilter mf = MethodFilter.parse(methodRegex);
-            if (!mf.matches(graph.method()))  // If Method Filter is specified, parse only target functions
+            if (!mf.matches(graph.method()))  // If Method Filter is specified, parse only target function[s]
                 return;
         }
 
@@ -599,6 +600,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
+        assert writerAttr != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a result writer.";
         writerAttr.printf("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes%n");
 
         for (int i = 0; i < fsplits.size(); i++) {
