@@ -161,7 +161,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
         try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
-            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.EARLIEST_WITH_GUARD_ORDER, cfg);  // Do scheduling cause of floating point nodes
+            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do scheduling cause of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
@@ -172,8 +172,9 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         System.out.println("------------------------------------------------------------------------------------------------------------");
         System.out.printf("%3s %30s %s\n", "blk", "successors", "blk_nodes:");
         for (Block b : cfg.getBlocks()) {
-            System.out.printf("%3s %30s ", b.toString(), (b != null ? Arrays.toString(b.getSuccessors()) : "null"));
-            System.out.println(b.getNodes());
+            System.out.printf("%3s %30s ", b.toString(), Arrays.toString(b.getSuccessors()));
+            System.out.print(b.getNodes());
+            System.out.println(r.nodesFor(b));
         }
         System.out.println("------------------------------------------------------------------------------------------------------------");
     }
@@ -276,6 +277,11 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         String groundTruth = "7|If-B0-[B1,B2,B3,B4,B5][null]-[B6][null]\n" +
                 "8|IntegerSwitch-B1-[B2][null]-[B3][null]-[B4][null]\n";
         testCodeSnippet("example_ftest49", groundTruth);
+    }
+
+    @Test
+    public void test_ControlSplit(){
+        __printCodeSnippet("example_ControlSplits");
     }
 
     /* SOURCE CODES */
@@ -520,6 +526,35 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         System.console();
         System.console();
         return;
+    }
+
+    /* ATTRIBUTES TESTS SOURCE CODES */
+    private static int example_ControlSplits(int a, int b, int c){
+        int tmp = 11;
+        if(a>b){
+            switch(c){
+                case 1:
+                    tmp += b;
+                    break;
+                case 2:
+                    tmp *= b;
+                    break;
+                default:
+                    if(c>b)
+                        tmp = 9;
+                    else
+                        tmp = 7;
+            }
+        }else{
+            int i = 0;
+            while(i<a){
+                if(tmp>b)
+                    tmp -= c;
+                else
+                    tmp += a;
+            }
+        }
+        return tmp;
     }
 
 }

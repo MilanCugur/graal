@@ -45,7 +45,6 @@ import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
 import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.core.common.cfg.Loop;
-import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
@@ -191,8 +190,6 @@ class TraversalState {
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private String methodRegex;
-
-    private static PrintWriter writer;
     private static String PATH;
 
     static {
@@ -222,7 +219,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // Block and nodes integration
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-        try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
+        try {
             SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do scheduling because of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
@@ -328,8 +325,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                                     return new TraversalState(newPath);
                                 else
                                     tailCS.setTailBlocks(newPath);
-                            } else
-                                continue; // Son not added; No one waiting for me
+                            } // else continue: son not added; No one is waiting for me
                         }
                     } else {
                         splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail
@@ -381,7 +377,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     fatherCS.addASon(newPath);
                 } else if (tailCS != null) {
                     tailCS.setTailBlocks(newPath);
-                }  // Else: no one waiting for this path as a son/tail; continue to flushing splits
+                }  // else continue: son/tail not added; No one is waiting for me, continue to flushing splits
             }
         }
 
