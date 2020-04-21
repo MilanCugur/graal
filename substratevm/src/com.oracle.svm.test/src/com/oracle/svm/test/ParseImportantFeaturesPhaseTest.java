@@ -27,6 +27,7 @@ package com.oracle.svm.test;
 import com.oracle.svm.hosted.phases.ParseImportantFeaturesPhase;
 import org.graalvm.compiler.core.test.GraalCompilerTest;
 import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
@@ -174,7 +175,16 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         for (Block b : cfg.getBlocks()) {
             System.out.printf("%3s %30s ", b.toString(), Arrays.toString(b.getSuccessors()));
             //System.out.print(b.getNodes());
-            System.out.println(r.nodesFor(b));
+            //System.out.println(r.nodesFor(b));
+            // Estimation
+            //System.out.print("[");
+            //for(Node n : r.nodesFor(b)){
+            //    System.out.println(n+" cycles: "+n.estimatedNodeCycles()+" ass size: "+n.estimatedNodeSize()+" ");
+            //}
+            //System.out.print("]");
+
+            // Loops
+            System.out.println(r.nodesFor(b)+"LOOP DEPTH: "+b.getLoopDepth());
         }
         System.out.println("------------------------------------------------------------------------------------------------------------");
     }
@@ -264,15 +274,15 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
                     String tail = __sortPath(branchData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
 
-                    if (!sons.containsKey(branch + "--" + tail)){
+                    if (!sons.containsKey(branch + "--" + tail)) {
                         System.out.println("ParseImportantFeaturesPhaseTest error on function: " + snippet + " Error son not found: " + branch + "--" + tail);
                         System.out.println("Ground Truth: " + sons.keySet());
                         nerror += 1;
-                    } else if(!__compare(attributesTruth, sons.get(branch + "--" + tail), sonData)){
+                    } else if (!__compare(attributesTruth, sons.get(branch + "--" + tail), sonData)) {
                         System.out.println("ParseImportantFeaturesPhaseTest error on function: " + snippet + " Content aren't the same on son: " + branch + "--" + tail);
                         System.out.println("Ground Truth: " + sons.keySet());
                         nerror += 1;
-                    }else{
+                    } else {
                         sons.remove(branch + "--" + tail);
                     }
                 }
@@ -426,6 +436,34 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
     // NodeDescription-Head-Branch1-Branch2-Branch3
     // BranchI: [son][tail];[son attr 1][tail attr 1]:[son attr 2][tail attr 2]:[cs global attr]:etc.
     // attr correspond to attributes respectively
+
+    @Test
+    public void test_Simple() {
+        String groundTruth = "9|If-B0-[B1,B2,B3,B4][null];[4][0]:[10][0]:[3][0]-[B5][null];[1][0]:[2][0]:[1][0]\n" +
+                "10|IntegerSwitch-B1-[B2][null];[1][0]:[2][0]:[1][0]-[B3][null];[1][0]:[2][0]:[1][0]-[B4][null];[1][0]:[4][0]:[0][0]\n";
+        String[] attributes = {"N. Blocks", "IR Fixed Node Count", "IR Floating Node Count"};
+        testAttributesCodeSnippet("example_Simple", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Estimated() {
+        String groundTruth = "8|If-B0-[B1][null];[3][0]:[4][0]:[5][0]:[0][0]-[B2][null];[34][0]:[2][0]:[2][0]:[0][0]\n";
+        String[] attributes = {"Estimated CPU Cycles", "Estimated Assembly Size", "N. Estimated CPU Cheap", "N. Estimated CPU Expns"};
+        testAttributesCodeSnippet("example_Estimated", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Loops() {
+        String groundTruth = "49|If-B6-[B7][null];[3][0]:[3][0]:[0][0]:[0][0]-[x(45|LoopExit)][null];[2][0]:[2][0]:[0][0]:[1][0]\n" +
+                             "36|If-B4-[B5,B6,B7,B8][null];[2][0]:[3][0]:[1][0]:[1][0]-[x(32|LoopExit)][null];[1][0]:[1][0]:[0][0]:[1][0]\n" +
+                             "23|If-B2-[B3,B4,B5,B6,B7,B8,B9][null];[1][0]:[3][0]:[2][0]:[2][0]-[x(19|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                             "92|If-B14-[B15][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(86|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                             "70|If-B12-[B18][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(67|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                             "9|If-B0-[B1,B2,B3,B4,B5,B6,B7,B8,B9,B10][null];[0][0]:[3][0]:[3][0]:[3][0]-[B11,B12,B13,B14,B15,B16,B18][null];[0][0]:[1][0]:[2][0]:[2][0]\n";
+        String[] attributes = {"Loop Depth", "Max Loop Depth", "N. Loops", "N. Loop Exits"};
+        testAttributesCodeSnippet("example_Loops", attributes, groundTruth);
+    }
+
     @Test
     public void test_ControlSplit() {
         String groundTruth = "9|If-B0-[B1,B2,B3,B4,B5,B6][null];[2][0]:[2][0]:[0]:[0]:[0]:[0]-[B7,B8,B9,B11,B12,B13][null];[2][0]:[2][0]:[0]:[0]:[0]:[0]\n" +
@@ -706,6 +744,64 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                 else
                     tmp += a;
             }
+        }
+        return tmp;
+    }
+
+    private static int example_Simple(int a, int b, int c) {
+        int tmp = 11;
+        if (a > b) {
+            switch (c) {
+                case 1:
+                    tmp += b;
+                    break;
+                case 2:
+                    tmp *= b;
+                    break;
+                default:
+                    tmp /= a;
+                    tmp /= b;
+            }
+        } else {
+            int i = 0;
+            tmp = tmp & 23;
+            tmp = tmp << 2;
+        }
+
+        return tmp;
+    }
+
+    private static int example_Estimated(int a, int b) {
+        int tmp = 11;
+        if (a > b) {
+            tmp += a;
+            System.console();
+        } else {
+            tmp *= b;
+            tmp /= a;
+        }
+        return tmp;
+    }
+
+    private static int example_Loops(int a, int b, int c) {
+        int tmp = 11;
+        if (a > b) {
+            for (int i = 0; i < a; i++) {
+                for (int j = 0; j < b; j++) {
+                    for (int k = 0; k < c; k++) {
+                        tmp += a;
+                    }
+                }
+            }
+        } else {
+            int i = 0;
+            while (i < a) {
+                tmp -= c;
+            }
+            System.console();
+            do {
+                tmp += b;
+            } while (tmp < c);
         }
         return tmp;
     }
