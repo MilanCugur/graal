@@ -1127,7 +1127,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             throw new Exception();
         return 8;
     }
-    
+
 }
 
 class example_Allocations_Class {

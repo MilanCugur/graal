@@ -817,7 +817,7 @@ public class NativeImageGenerator {
                 featureHandler.registerFeatures(loader, debug);
                 AfterRegistrationAccessImpl access = new AfterRegistrationAccessImpl(featureHandler, loader, originalMetaAccess, mainEntryPoint, debug);
                 featureHandler.forEachFeature(feature -> feature.afterRegistration(access));
-                if (!Pair.<Method, CEntryPointData> empty().equals(access.getMainEntryPoint())) {
+                if (!Pair.<Method, CEntryPointData>empty().equals(access.getMainEntryPoint())) {
                     setAndVerifyMainEntryPoint(access, entryPoints);
                 }
                 registerEntryPoints(entryPoints);

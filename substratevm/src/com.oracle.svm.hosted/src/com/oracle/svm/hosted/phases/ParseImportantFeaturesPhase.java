@@ -75,11 +75,11 @@ import org.graalvm.compiler.replacements.nodes.*;
 
 /* Representation of a control split */
 class ControlSplit {
-    private Block block;  // Block ending with control split node
-    private List<Block> pathToBlock;  // The path leading to this block
-    private EconomicSet<AbstractBeginNode> sonsHeads;  // Head nodes of sons I am waiting for
+    private Block block;                                             // Block ending with the control split node
+    private List<Block> pathToBlock;                                 // The path leading to this block
+    private EconomicSet<AbstractBeginNode> sonsHeads;                // Head nodes of sons I am waiting for
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
-    private EconomicSet<AbstractBeginNode> tailHeads;  // If I go through my personal merge and I am not complete at that time. If I am finished at my personal merge but that merge is continue-in-switch caused. Simply code propagation to predecessor control splits.
+    private EconomicSet<AbstractBeginNode> tailHeads;                // If I go through my personal merge and I am not complete at that time. If I am finished at my personal merge but that merge is continue-in-switch caused. Simply code propagation to predecessor control splits.
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -88,8 +88,9 @@ class ControlSplit {
         this.pathToBlock = new ArrayList<>(path);
         this.sonsBlocks = EconomicMap.create(Equivalence.DEFAULT);
         this.sonsHeads = EconomicSet.create(Equivalence.DEFAULT);
-        for (Block son : block.getSuccessors())
+        for (Block son : block.getSuccessors()) {
             this.sonsHeads.add(son.getBeginNode());
+        }
         this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
         this.tailBlocks = EconomicMap.create(Equivalence.DEFAULT);
     }
@@ -111,7 +112,7 @@ class ControlSplit {
         return this.sonsBlocks.getEntries();
     }
 
-    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {  // additional getter
+    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {  // src getter
         return this.sonsBlocks;
     }
 
@@ -136,7 +137,7 @@ class ControlSplit {
         return this.tailBlocks.getEntries();
     }
 
-    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {  // additional getter
+    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {  // src getter
         return this.tailBlocks;
     }
 
@@ -154,9 +155,9 @@ class ControlSplit {
         this.tailBlocks.put(node, new ArrayList<>(tailBlocks));
     }
 
-    public boolean areInTails(AbstractBeginNode node) {
+    public boolean areInTails(AbstractBeginNode node) {  // check
         return this.tailHeads.contains(node);
-    }  // check
+    }
 }
 
 /* Graph traversal intermediate state representation */
@@ -168,10 +169,11 @@ class TraversalState {
     }
 
     public TraversalState(List<Block> path) {
-        if (path == null)
+        if (path == null) {
             this.path = new ArrayList<>();
-        else
+        } else {
             this.path = new ArrayList<>(path);
+        }
     }
 
     public List<Block> getPath() {
