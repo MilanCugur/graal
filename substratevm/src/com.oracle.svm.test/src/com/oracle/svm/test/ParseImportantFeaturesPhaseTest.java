@@ -27,7 +27,6 @@ package com.oracle.svm.test;
 import com.oracle.svm.hosted.phases.ParseImportantFeaturesPhase;
 import org.graalvm.compiler.core.test.GraalCompilerTest;
 import org.graalvm.compiler.debug.DebugContext;
-import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
@@ -127,6 +126,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         File directory = new File(".");
         File[] files = directory.listFiles();
         List<File> filesFeatures = new ArrayList<>();
+        assert files != null : "ParseImportantFeaturesPhaseTest Error: cannot find results database.";
         for (File file : files) {
             if (file.isDirectory() && file.getName().contains("importantAttributes")) {
                 filesFeatures.add(file);
@@ -174,8 +174,12 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         System.out.printf("%3s %30s %s\n", "blk", "successors", "blk_nodes:");
         for (Block b : cfg.getBlocks()) {
             System.out.printf("%3s %30s ", b.toString(), Arrays.toString(b.getSuccessors()));
+            // Fixed
             //System.out.print(b.getNodes());
-            //System.out.println(r.nodesFor(b));
+
+            // All
+            System.out.println(r.nodesFor(b));
+
             // Estimation
             //System.out.print("[");
             //for(Node n : r.nodesFor(b)){
@@ -184,7 +188,26 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             //System.out.print("]");
 
             // Loops
-            System.out.println(r.nodesFor(b)+"LOOP DEPTH: "+b.getLoopDepth());
+            //System.out.println(r.nodesFor(b)+"LOOP DEPTH: "+b.getLoopDepth());
+
+            // Print Invoke in Arrays, Allocations, Exceptions
+            //System.out.println("=====" + b + "=====");
+            //for (Node node : r.nodesFor(b)) {
+            //    System.out.println(node);
+            //    if (node instanceof InvokeNode) {
+            //        ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+            //        System.out.println("tmetod: " + tmethod);
+            //        if (tmethod instanceof HostedMethod) {
+            //            System.out.println("tmethod is instanceof HostedMethod");
+            //        } else {
+            //            System.out.println("tmethod is not instanceof  HostedMethod");
+            //       }
+            //        System.out.println("Class: " + tmethod.getClass());
+            //        System.out.println("Decl class: " + tmethod.getDeclaringClass());
+            //        System.out.println("Host class" + tmethod.getDeclaringClass().getHostClass());
+            //    }
+            //}
+            //System.out.println("==========");
         }
         System.out.println("------------------------------------------------------------------------------------------------------------");
     }
@@ -248,7 +271,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                 assert SourceFunction.equals(snippet) : "ParseImportantFeaturesPhaseTest Error: Source function does not match.";
                 String NodeDescription = data[2];
                 String head = data[3];
-                assert gt.containsKey(NodeDescription + "--" + head) : "ParseImportantFeaturesPhaseError: wrong Control Split in .csv file.";
+                assert gt.containsKey(NodeDescription + "--" + head) : "ParseImportantFeaturesPhaseError: wrong Control Split in .csv file. Couldn't find: " + NodeDescription + "--" + head;
                 HashMap<String, String[]> sons = gt.get(NodeDescription + "--" + head);
                 HashMap<String, String> csData = new HashMap<>();
                 csData.put("CS Depth", data[4]);
@@ -304,7 +327,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         assertTrue("Test " + snippet + " failed.", nerror == 0);
     }
 
-    public boolean __compare(String[] attributesTruth, String[] gtData, HashMap<String, String> parsedData) {
+    private boolean __compare(String[] attributesTruth, String[] gtData, HashMap<String, String> parsedData) {
         // [2][0] vs [2][0] or [1] vs 1
         HashSet<String> unique = new HashSet<>();
         unique.addAll(Arrays.asList(new String[]{"CS Depth", "N. CS Father Blocks", "N. CS Father Fixed Nodes", "N. CS Father Floating Nodes"}));
@@ -455,11 +478,11 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
     @Test
     public void test_Loops() {
         String groundTruth = "49|If-B6-[B7][null];[3][0]:[3][0]:[0][0]:[0][0]-[x(45|LoopExit)][null];[2][0]:[2][0]:[0][0]:[1][0]\n" +
-                             "36|If-B4-[B5,B6,B7,B8][null];[2][0]:[3][0]:[1][0]:[1][0]-[x(32|LoopExit)][null];[1][0]:[1][0]:[0][0]:[1][0]\n" +
-                             "23|If-B2-[B3,B4,B5,B6,B7,B8,B9][null];[1][0]:[3][0]:[2][0]:[2][0]-[x(19|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
-                             "92|If-B14-[B15][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(86|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
-                             "70|If-B12-[B18][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(67|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
-                             "9|If-B0-[B1,B2,B3,B4,B5,B6,B7,B8,B9,B10][null];[0][0]:[3][0]:[3][0]:[3][0]-[B11,B12,B13,B14,B15,B16,B18][null];[0][0]:[1][0]:[2][0]:[2][0]\n";
+                "36|If-B4-[B5,B6,B7,B8][null];[2][0]:[3][0]:[1][0]:[1][0]-[x(32|LoopExit)][null];[1][0]:[1][0]:[0][0]:[1][0]\n" +
+                "23|If-B2-[B3,B4,B5,B6,B7,B8,B9][null];[1][0]:[3][0]:[2][0]:[2][0]-[x(19|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                "92|If-B14-[B15][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(86|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                "70|If-B12-[B18][null];[1][0]:[1][0]:[0][0]:[0][0]-[x(67|LoopExit)][null];[0][0]:[0][0]:[0][0]:[1][0]\n" +
+                "9|If-B0-[B1,B2,B3,B4,B5,B6,B7,B8,B9,B10][null];[0][0]:[3][0]:[3][0]:[3][0]-[B11,B12,B13,B14,B15,B16,B18][null];[0][0]:[1][0]:[2][0]:[2][0]\n";
         String[] attributes = {"Loop Depth", "Max Loop Depth", "N. Loops", "N. Loop Exits"};
         testAttributesCodeSnippet("example_Loops", attributes, groundTruth);
     }
@@ -473,6 +496,92 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                 "46|If-B11-[B12][null];[0][0]:[0][0]:[2]:[5]:[10]:[5]-[B13][null];[0][0]:[0][0]:[2]:[5]:[10]:[5]\n";
         String[] attributes = {"Max CS Depth", "N. Control Splits", "CS Depth", "N. CS Father Blocks", "N. CS Father Fixed Nodes", "N. CS Father Floating Nodes"};
         testAttributesCodeSnippet("example_ControlSplits", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Invoke() {
+        String groundTruth = "32|If-B3-[x(30|LoopExit)][null];[0][0]-[B6][null];[1][0]\n" +
+                "14|If-B0-[B1][null];[1][0]-[B2,B3,B4,B6][null];[2][0]\n";
+        String[] attributes = {"N. Invoke"};
+        testAttributesCodeSnippet("example_Invoke", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Allocations() {
+        String groundTruth = "14|If-B0-[B1][null];[1][0]-[B2][null];[2][0]\n" +
+                "47|If-B3-[B4][null];[1][0]-[B5][null];[0][0]\n";
+        String[] attributes = {"N. Allocations"};
+        testAttributesCodeSnippet("example_Allocations", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Exceptions() {
+        // Can't see "{25,44}|Invoke#Throwable.<init>" @ B1, B4 cause of snippet function parsing: target method is of type "jdk.vm.ci.hotspot.HotSpotResolvedJavaMethodImpl" not "com.oracle.svm.hosted.meta.HostedMethod"
+        // Can't see "BytecodeExceptionNode" at this phase (clear call, only this phase, parse eager)
+        String groundTruth = "21|If-B0-[B1][null];[0][0]-[B2,B3,B5][null];[0][0]\n" +
+                "36|If-B2-[B3][null];[0][0]-[B5][null];[0][0]\n";
+        String[] attributes = {"N. Exceptions"};
+        testAttributesCodeSnippet("example_Exceptions", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Assertions() {
+        // Can't see "{36,29}|Invoke#AssertionError.<init>" @ {B5, B6} cause of snippet function parsing: target method is of type "jdk.vm.ci.hotspot.HotSpotResolvedJavaMethodImpl" not "com.oracle.svm.hosted.meta.HostedMethod"
+        String groundTruth = "25|If-B4-[B5][null];[0][0]-[B6][null];[0][0]\n" +
+                "20|If-B2-[B3][null];[0][0]-[B4,B5,B6,B7][null];[0][0]\n" +
+                "12|If-B0-[B1][null];[0][0]-[B2,B3,B4,B5,B6,B7][null];[0][0]\n";
+        String[] attributes = {"N. Assertions"};
+        testAttributesCodeSnippet("example_Assertions", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_ControlSinks() {
+        String groundTruth = "7|If-B0-[B1][null];[1][0]-[B2,B3,B4,B5,B6,B7][null];[3][0]\n" +
+                "9|IntegerSwitch-B2-[B3][B5];[0][1]-[B4][B5];[0][1]-[B6][null];[1][0]-[B7][null];[1][0]\n";
+        String[] attributes = {"N. Control Sinks"};
+        testAttributesCodeSnippet("example_ControlSinks", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Monitor() {
+        String groundTruth = "24|If-B0-[B1][null];[2][0]:[2][0]-[B2][null];[0][0]:[0][0]\n";
+        String[] attributes = {"N. Monitor Enter", "N. Monitor Exit"};
+        testAttributesCodeSnippet("example_Monitor", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Arrays() {
+        // Can't see "59|Invoke#Arrays.compare" @ B5 cause of snippet function parsing: target method is of type "jdk.vm.ci.hotspot.HotSpotResolvedJavaMethodImpl" not "com.oracle.svm.hosted.meta.HostedMethod"
+        String groundTruth = "8|If-B0-[B1][null];[0][0]:[0][0]:[0][0]:[0][0]-[B2,B3,B4,B5,B6,B7,B8,B9,B10][null];[3][0]:[13][0]:[1][0]:[2][0]\n" +
+                "45|If-B2-[B3][null];[0][0]:[0][0]:[0][0]:[0][0]-[B4][null];[0][0]:[0][0]:[1][0]:[0][0]\n" +
+                "66|If-B5-[B6][null];[0][0]:[0][0]:[0][0]:[0][0]-[B7,B8,B9,B10][null];[3][0]:[5][0]:[0][0]:[2][0]\n" +
+                "94|If-B7-[B8][null];[1][0]:[0][0]:[0][0]:[0][0]-[B9][null];[1][0]:[0][0]:[0][0]:[0][0]\n";
+        String[] attributes = {"N. Array Load", "N. Array Store", "N. Array Compare", "N. Array Copy"};
+        testAttributesCodeSnippet("example_Arrays", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_SimpleOperations() {
+        String groundTruth = "14|If-B0-[B8][null];[0][0]:[0][0]:[0][0]:[2][0]:[0][0]-[B1,B2,B3,B4,B5,B6,B7][null];[2][0]:[1][0]:[0][0]:[3][0]:[0][0]\n" +
+                "15|IntegerSwitch-B1-[B2][null];[0][0]:[0][0]:[0][0]:[1][0]:[0][0]-[B3][null];[1][0]:[0][0]:[0][0]:[2][0]:[0][0]-[B4,B5,B6,B7][null];[1][0]:[1][0]:[0][0]:[0][0]:[0][0]\n" +
+                "26|If-B4-[B5][null];[0][0]:[0][0]:[0][0]:[0][0]:[0][0]-[B6][null];[0][0]:[0][0]:[0][0]:[0][0]:[0][0]\n";
+        String[] attributes = {"N. Const. Nodes", "N. Logic Op.", "N. Unary Op.", "N. Binary Op.", "N. Ternary Op."};
+        testAttributesCodeSnippet("example_SimpleOperations", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_StaticInstance() {
+        String groundTruth = "10|If-B0-[B1][null];[0][0]:[2][0]:[0][0]:[1][0]-[B2][null];[2][0]:[0][0]:[1][0]:[0][0]\n";
+        String[] attributes = {"N. Static Load Fields", "N. Instance Load Fields", "N. Static Store Fields", "N. Instance Store Fields"};
+        testAttributesCodeSnippet("example_StaticInstance", attributes, groundTruth);
+    }
+
+    @Test
+    public void test_Raw() {
+        String groundTruth = "7|If-B0-[B1][null];[0][0]-[B2,B3,B4,B5][null];[1][0]\n" +
+                "32|If-B2-[B3][null];[0][0]-[B4][null];[1][0]\n";
+        String[] attributes = {"N. Raw Memory Access"};
+        testAttributesCodeSnippet("example_Raw", attributes, groundTruth);
     }
 
     /* SOURCE CODES */
@@ -806,4 +915,241 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         return tmp;
     }
 
+    private static int example_Monitor(int a, int b, int c) {
+        System.console();
+        System.console();
+
+        Scanner x = new Scanner(System.in);
+        Scanner y = new Scanner(System.in);
+        if (a > b) {
+            synchronized (x) {
+                c += a;
+                synchronized (y) {
+                    c *= b;
+                }
+            }
+        } else
+            c /= a;
+        return c;
+    }
+
+    private static double example_Invoke(int a, int b, int c) {
+        System.out.println("Start..");
+        double tmp = 11.0;
+        if (a > b) {
+            System.console();
+            tmp += c;
+        } else {
+            int i = 0;
+            while (i < a) {
+                System.out.println(i);
+            }
+            System.console();
+            tmp += Math.log(c);
+        }
+        return tmp;
+    }
+
+    private static int example_Allocations(int a, int b, int c) throws Exception {
+        System.out.println("Start..");
+        int tmp = 11;
+        if (a > b) {
+            Scanner sc = new Scanner(System.in);
+            tmp += sc.nextInt();
+        } else {
+            example_Allocations_Class x = new example_Allocations_Class();
+            example_Allocations_Class y = new example_Allocations_Class();
+            tmp += x.getA();
+            tmp = 9;
+        }
+        if (b > c)
+            throw new Exception();
+        return tmp;
+    }
+
+    private static void example_ControlSinks(int a, int b) throws Exception {
+        if (a > b)
+            return;
+        switch (a) {
+            case 1:
+                System.console();
+            case 2:
+                System.out.print("2");
+                return;
+            case 3:
+                throw new Exception();
+        }
+    }
+
+    private static int example_Arrays(int a, int b, int[] c) throws Exception {
+        if (a > b)
+            return b;
+
+        int[] tmp = {1, 2, 3, 4};
+        int[] tmp2 = {1, 2, 3, 4};
+        // simple == check pointers
+        System.out.println(tmp.equals(tmp2));
+
+        // ArrayEquals
+        System.out.println(Arrays.equals(tmp, tmp2));
+
+        // Invoke Arrays.compare
+        System.out.println(Arrays.compare(tmp, tmp2));
+
+        if (a > b)
+            return b;
+
+        int[] src = new int[]{1, 2, 3, 4, 5};
+        int[] dest = new int[5];
+        System.arraycopy(src, 0, dest, 0, src.length);
+
+        System.console();
+        dest = Arrays.copyOf(src, src.length);
+
+        if (a > b) {
+            a += tmp[0];
+        } else {
+            a *= tmp2[0];
+        }
+        a -= c[0];
+        return a;
+    }
+
+    private static int example_SimpleOperations(int a, int b, int c) {
+        System.out.println("Start..");
+        int tmp = 112;
+        if (a > b) {
+            switch (c) {
+                case 1:
+                    tmp += b;
+                    break;
+                case 2:
+                    tmp *= b;
+                    tmp++;
+                    break;
+                default:
+                    tmp /= a;
+                    tmp /= b;
+                    tmp = a > 25 ? c : a;
+            }
+        } else {
+            int i = 0;
+            tmp = tmp | c;
+            tmp = tmp << a;
+        }
+
+        return tmp & a;
+    }
+
+    static int example_StaticInstance_Var = 56;
+
+    private static int example_StaticInstance(int v1, int v2) throws Exception {
+        System.console();
+
+        if (v1 > v2) {
+            example_Allocations_Class q = new example_Allocations_Class(v1, v2);
+            v1 *= q.a;
+            v1 -= q.b;
+            q.a = v2;
+        } else {
+            example_StaticInstance_Var += v2;
+            v1 -= example_StaticInstance_Var;
+        }
+
+        System.out.println(v1);
+        return v1;
+    }
+
+    private static boolean example_Raw(int a, int b) {
+        if (a > b)
+            return false;
+        int[] tmp = {1, 2, 3};
+        int[] tmp1 = {1, 2, 9};
+        return Arrays.equals(tmp, tmp1);
+    }
+
+    private static int example_Assertions(int a, int b, int c) throws Exception {
+        System.console();
+
+        if (c < 0)
+            return 0;
+
+        System.console();
+
+        if (b > c)
+            return a;
+
+        assert a > b : "Maybe";
+
+        assert false : "Sure";
+
+        return a - b * c;
+    }
+
+    private static int example_Exceptions(int a, int b, int c) throws Exception {
+        System.console();
+
+        // BytecodeException
+        int tmp = 123;
+        try {
+            tmp /= b;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        tmp /= b;
+
+        System.console();
+
+        // ThrowBytecodeException
+        tmp /= a;
+
+        System.console();
+
+        // Invoke Throwable.fillInStackTrace
+        if (c > tmp)
+            throw new Exception();
+
+        System.console();
+
+        // Invoke Throwable.fillInStackTrace
+        if (b > tmp)
+            throw new NullPointerException();
+
+        System.console();
+
+        // Invoke Throwable.fillInStackTrace
+        tmp += example_Exceptions_Util(a, b);
+        return tmp;
+    }
+
+    private static int example_Exceptions_Util(int a, int b) throws Exception {
+        if (a > b)
+            throw new Exception();
+        return 8;
+    }
+    
+}
+
+class example_Allocations_Class {
+    public int a;
+    public int b;
+
+    public example_Allocations_Class() {
+        this.a = 0;
+        this.b = 0;
+    }
+
+    public example_Allocations_Class(int a, int b) {
+        this.a = a;
+        this.b = b;
+    }
+
+    public int getA() {
+        return this.a;
+    }
+
+    @Override
+    public String toString() {
+        return "(" + this.a + ", " + this.b + ")";
+    }
 }
