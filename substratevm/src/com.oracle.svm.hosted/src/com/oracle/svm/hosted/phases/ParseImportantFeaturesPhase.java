@@ -677,7 +677,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             AbstractBeginNode sonHead = sons.getKey();
             List<Block> sonPath = sons.getValue();
             List<Block> pinnedPath = pinnedPaths.get(sonHead);
-            EconomicMap<String, Integer> sonData = getData(sonPath, schedule, fsplits);
+            EconomicMap<String, Integer> sonData = __getData(sonPath, schedule, fsplits);
 
             if (sonHead instanceof LoopExitNode) {
                 writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
@@ -697,7 +697,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
             } else {
                 writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
-                EconomicMap<String, Integer> pinnedData = getData(pinnedPath, schedule, fsplits);
+                EconomicMap<String, Integer> pinnedData = __getData(pinnedPath, schedule, fsplits);
                 for (String attribute : sonData.getKeys())  // always preserves insertion order when iterating over keys
                     writerAttr.printf("; %s: [%d][%d]", attribute, sonData.get(attribute), pinnedData != null ? pinnedData.get(attribute) : 0);
             }
@@ -705,7 +705,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         writerAttr.printf("%n");
     }
 
-    private static EconomicMap<String, Integer> getData(List<Block> path, StructuredGraph.ScheduleResult schedule, List<EconomicMap<String, Object>> fsplits) {
+    private static EconomicMap<String, Integer> __getData(List<Block> path, StructuredGraph.ScheduleResult schedule, List<EconomicMap<String, Object>> fsplits) {
         if (path == null)
             return null;
         EconomicMap<String, Integer> data = EconomicMap.create(Equivalence.IDENTITY);
