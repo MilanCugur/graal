@@ -79,7 +79,7 @@ class ControlSplit {
     private List<Block> pathToBlock;                                 // The path leading to this block
     private EconomicSet<AbstractBeginNode> sonsHeads;                // Head nodes of sons I am waiting for
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
-    private EconomicSet<AbstractBeginNode> tailHeads;                // If I go through my personal merge and I am not complete at that time. If I am finished at my personal merge but that merge is continue-in-switch caused. Simply code propagation to predecessor control splits.
+    private EconomicSet<AbstractBeginNode> tailHeads;                // If I go through my personal merge and I am not complete at that time. Simply code propagation to predecessor control splits. If I am finished at my personal merge but that merge is continue-in-switch caused.
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
 
     public ControlSplit(Block block, List<Block> path) {
@@ -191,8 +191,8 @@ class TraversalState {
 
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
-    private String methodRegex;
-    private static String PATH;
+    private String methodRegex;  // Functions targeted for attribute parsing
+    private static String PATH;  // Results directory
 
     static {
         PATH = "./importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
@@ -206,7 +206,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     public static class Options {
         // @formatter:off
-        @Option(help = "Parse important features from graph nodes.", type = OptionType.Expert)
+        @Option(help = "Parse important features from Graal IR Graph.", type = OptionType.Expert)
         public static final OptionKey<Boolean> ParseImportantFeatures = new OptionKey<>(false);
         // @formatter:on
     }
@@ -222,14 +222,14 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Block and nodes integration
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
         try {
-            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do scheduling because of floating point nodes
+            SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do [Latest] scheduling because of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
 
-        Stack<ControlSplit> splits = new Stack<>();  // Active Control Splits
-        List<EconomicMap<String, Object>> fsplits = new ArrayList<>();  // Finished Control Splits
+        Stack<ControlSplit> splits = new Stack<>();                     // Active Control Splits
+        List<EconomicMap<String, Object>> fsplits = new ArrayList<>();  // Finished Control Splits Data
 
         ReentrantBlockIterator.BlockIteratorClosure<TraversalState> CSClosure = new ReentrantBlockIterator.BlockIteratorClosure<TraversalState>() {
             @Override
@@ -247,12 +247,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
                     if (block.getSuccessors().length == 0) {  // I don't have successors: for blocks like this ReentrantBlockIterator simply go on
                         ControlSplit targetCS = findControlSplitFather(splits, currentState.getPath());
-                        if (targetCS != null)
+                        if (targetCS != null) {
                             targetCS.addASon(currentState.getPath());
-                        else {  // If no one waits for me as a son, look at a their tails
+                        } else {  // If no one waits for me as a son, look at a their tails
                             targetCS = findTailFather(splits, currentState.getPath());
-                            if (targetCS != null)
+                            if (targetCS != null) {
                                 targetCS.setTailBlocks(currentState.getPath());
+                            }
                         }
                         // else - no one to catch
                         // currentState path will be reset on ReentrantBlockIterator.java, @ line 170.
@@ -261,18 +262,19 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                         // If next is LoopBeginNode: if curr is loop end: add path as a someone son/tail, else: skip adding path as a anyone son/tail
                         if (block.getEndNode() instanceof AbstractEndNode && (block.isLoopEnd() || !(block.getFirstSuccessor().getBeginNode() instanceof LoopBeginNode))) {
                             ControlSplit targetCS = findControlSplitFather(splits, currentState.getPath());
-                            if (targetCS != null)
+                            if (targetCS != null) {
                                 targetCS.addASon(currentState.getPath());
-                            else {  // If no one waits for me as a son, look at a theirs tails
+                            } else {  // If no one waits for me as a son, look at a theirs tails
                                 targetCS = findTailFather(splits, currentState.getPath());
-                                if (targetCS != null)
+                                if (targetCS != null) {
                                     targetCS.setTailBlocks(currentState.getPath());
+                                }
                             }
                             // else - no one to catch
                             // currentState path will be reset on ReentrantBlockIterator.java, @ line 170, eventually @ line 147.
                         }
                     } else {
-                        assert false : "Node with more than one successors doesn't catch as a Control Split Node.";
+                        assert false : "Node with more than one successors hasn't caught as a Control Split Node.";
                     }
                 }
                 return currentState;  // This will be used only on FixedWithNextNode process
@@ -281,11 +283,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             @Override
             protected TraversalState merge(Block merge, List<TraversalState> __states) {
                 // ___states are used internally by ReentrantBlockIterator in order to ensure that the graph is properly visited
-                if (splits.size() > 0 && !splits.peek().finished()) {
-                    // Going through uncomplete (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
-                    splits.peek().setTailNode(merge.getBeginNode());  // Add as a tail
-                    return new TraversalState();  // Clear path
-                }
 
                 while (splits.size() > 0) {
                     if (splits.peek().finished()) {
@@ -330,8 +327,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             } // else continue: son not added; No one is waiting for me
                         }
                     } else {
+                        // Going through uncompleted (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
+                        // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path, later on, when finish that Control Split, just do regularly
                         splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail
-                        return new TraversalState();  // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path, later on, when finish that Control Split, just do regularly
+                        return new TraversalState();  // Clear path
                     }
                 }
                 return new TraversalState();  // No more Control Splits on stack, fresh restart
