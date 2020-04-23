@@ -285,24 +285,27 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 // ___states are used internally by ReentrantBlockIterator in order to ensure that the graph is properly visited
 
                 while (splits.size() > 0) {
+                    boolean finished = false;  // Are control split on top of the stack finished?
                     if (splits.peek().finished()) {
-                        // Finished Control Split (on top of the stack)
-                        ControlSplit stacksTop = splits.peek();
-
-                        // If on top of the stack are switch control split which is not fully finished
-                        // Should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part or simply propagate it upwards
-                        if (splits.peek().getBlock().getSuccessorCount() > 2) {  // Switch node case
+                        if (splits.peek().getBlock().getSuccessorCount() == 2) {  // If/Invoke control split
+                            finished = true;
+                        } else {  // Switch control split
                             EconomicSet<AbstractMergeNode> reachable = EconomicSet.create(Equivalence.DEFAULT);
                             for (List<Block> son : splits.peek().getSonsPaths()) {
                                 reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
                             }
-                            for (List<Block> tail : splits.peek().getTailsPaths())
+                            for (List<Block> tail : splits.peek().getTailsPaths()) {
                                 reachable.remove((AbstractMergeNode) tail.get(0).getBeginNode());  // Remove already reached merge nodes
-                            if (reachable.size() > 0) {  // Control split is currently incomplete
-                                splits.peek().setTailNode(merge.getBeginNode());  // Add next path as a tail, if its connected it will be kept, otherwise will be propagated upwards
-                                return new TraversalState();
+                            }
+                            if (reachable.size() == 0) {  // All son's merges are reached
+                                finished = true;
                             }
                         }
+                    }
+
+                    if (finished) {
+                        // Finished Control Split (on top of the stack)
+                        ControlSplit stacksTop = splits.peek();
 
                         // My new path
                         List<Block> newPath = writeOutFromStack(splits, graph, schedule, fsplits);
@@ -314,21 +317,24 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                             tailCS = findTailFather(splits, newPath);
                             if (fatherCS != null) {
                                 // If tis my personal merge continue, else push as a son
-                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode()))
+                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode())) {
                                     return new TraversalState(newPath);
-                                else
+                                } else {
                                     fatherCS.addASon(newPath);
+                                }
                             } else if (tailCS != null) {
                                 // If its my personal merge continue, else push as a tail
-                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode()))
+                                if (personalMerge(stacksTop, (AbstractMergeNode) merge.getBeginNode())) {
                                     return new TraversalState(newPath);
-                                else
+                                } else {
                                     tailCS.setTailBlocks(newPath);
+                                }
                             } // else continue: son not added; No one is waiting for me
                         }
                     } else {
                         // Going through uncompleted (personal) merge (merge which all ends were visited, but appropriate control split isn't finished)
                         // A Control Split on the top of the splits firstly was finished, then popped up and added as a son or tail, then loop were continued, then control split on top of the stack aren't finished: further go on merge node deeper with empty path, later on, when finish that Control Split, just do regularly
+                        // If on top of the stack are switch control split which is not fully finished: should propagate through that merge, and add merge as a cs tail. Later on, eventually add it to the appropriate merge forward ends as their part or simply propagate it upwards [switches tails caused]
                         splits.peek().setTailNode(merge.getBeginNode()); // Add as a tail
                         return new TraversalState();  // Clear path
                     }
@@ -403,11 +409,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return true;
     }
 
-    private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path) {
+    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, List<Block> path) {
         if (path == null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).areInTails(path.get(0).getBeginNode()))
+            if (splits.get(i).areInSons(path.get(0).getBeginNode()))
                 break;
         }
         if (i == -1)
@@ -416,11 +422,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             return splits.get(i);
     }
 
-    private static ControlSplit findControlSplitFather(Stack<ControlSplit> splits, List<Block> path) {
+    private static ControlSplit findTailFather(Stack<ControlSplit> splits, List<Block> path) {
         if (path == null) return null;
         int i;
         for (i = splits.size() - 1; i >= 0; i--) {
-            if (splits.get(i).areInSons(path.get(0).getBeginNode()))
+            if (splits.get(i).areInTails(path.get(0).getBeginNode()))
                 break;
         }
         if (i == -1)
