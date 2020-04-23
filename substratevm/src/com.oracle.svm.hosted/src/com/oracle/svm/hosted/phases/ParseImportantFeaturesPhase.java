@@ -81,6 +81,7 @@ class ControlSplit {
     private EconomicMap<AbstractBeginNode, List<Block>> sonsBlocks;  // Completed sons
     private EconomicSet<AbstractBeginNode> tailHeads;                // If I go through my personal merge and I am not complete at that time. Simply code propagation to predecessor control splits. If I am finished at my personal merge but that merge is continue-in-switch caused.
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
+    private EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths; // Asymmetric switch case: paths that go out from each son to the new end
 
     public ControlSplit(Block block, List<Block> path) {
         assert block.getEndNode() instanceof ControlSplitNode : "ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).";
@@ -93,6 +94,7 @@ class ControlSplit {
         }
         this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
         this.tailBlocks = EconomicMap.create(Equivalence.DEFAULT);
+        this.pinnedPaths = null;
     }
 
     public Block getBlock() {
@@ -104,16 +106,28 @@ class ControlSplit {
     }
 
     // Sons operations
-    public Boolean finished() {
-        return this.sonsHeads.isEmpty();
+    public Boolean finished() {  // Are control split on top of the stack finished?
+        if (this.sonsHeads.isEmpty()) {
+            if (this.block.getSuccessorCount() == 2) {  // If/Invoke control split
+                return true;
+            } else {  // Switch control split [sons tails purpose]
+                EconomicSet<AbstractMergeNode> reachable = EconomicSet.create(Equivalence.DEFAULT);
+                for (List<Block> son : this.getSonsPaths()) {
+                    reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
+                }
+                for (List<Block> tail : this.getTailsPaths()) {
+                    reachable.remove((AbstractMergeNode) tail.get(0).getBeginNode());  // Remove already reached merge nodes
+                }
+                // All son's merges are reached
+                return reachable.size() == 0;
+            }
+        } else {
+            return false;
+        }
     }
 
     public UnmodifiableMapCursor<AbstractBeginNode, List<Block>> getSons() {  // main getter
         return this.sonsBlocks.getEntries();
-    }
-
-    public EconomicMap<AbstractBeginNode, List<Block>> getSonsMap() {  // src getter
-        return this.sonsBlocks;
     }
 
     public Iterable<List<Block>> getSonsPaths() {  // auxiliary getter
@@ -137,10 +151,6 @@ class ControlSplit {
         return this.tailBlocks.getEntries();
     }
 
-    public EconomicMap<AbstractBeginNode, List<Block>> getTailsMap() {  // src getter
-        return this.tailBlocks;
-    }
-
     public Iterable<List<Block>> getTailsPaths() {  // auxiliary getter
         return this.tailBlocks.getValues();
     }
@@ -157,6 +167,100 @@ class ControlSplit {
 
     public boolean areInTails(AbstractBeginNode node) {  // check
         return this.tailHeads.contains(node);
+    }
+
+    // Pinned paths operations
+    public EconomicMap<AbstractBeginNode, List<Block>> getPinnedPaths() {
+        return this.pinnedPaths;
+    }
+
+    public void sonsConcat() {  // Concatenate sons of switch control split; additionally calculate pinned paths
+        assert this.finished() : "ParseImportantFeaturesPhaseError: Cannot concat sons of unfinished control split.";
+        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths
+
+        if (this.getBlock().getSuccessorCount() > 2) {
+            EconomicMap<AbstractBeginNode, List<Block>> __fulltails = this.tailBlocks;  // cs tails map
+            EconomicMap<AbstractBeginNode, List<Block>> __fullsons = this.sonsBlocks;  // cs sons map
+
+            UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = this.getSons();
+            while (__sons.advance()) {
+                AbstractBeginNode sonHead = __sons.getKey();
+                List<Block> sonPath = __sons.getValue();
+
+                pinnedPaths.put(sonHead, null);  // initially put null value
+
+                List<Block> newMeat = new ArrayList<>(sonPath);
+                while (true) {  // traverse following sons path
+                    EconomicSet<AbstractMergeNode> sonEnds = __pathReachable(newMeat);
+                    newMeat.clear();
+                    if (sonEnds.isEmpty()) {
+                        break;
+                    }
+                    for (AbstractMergeNode nextNode : sonEnds) {
+                        if (__fulltails.containsKey(nextNode)) {
+                            // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
+                            List<Block> tailBody = __fulltails.get(nextNode);
+                            if (__hasInnerExit(tailBody, __fulltails.getKeys())) {  // Inner sub-path
+                                newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
+                            } else {
+                                pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
+                                break;
+                            }
+                        }
+                    }
+                    if (newMeat.size() == 0 || pinnedPaths.get(sonHead) != null) {
+                        break;
+                    } else {
+                        sonPath.addAll(new ArrayList<>(newMeat));
+                    }
+                }
+
+                __fullsons.put(sonHead, sonPath);  // [eventually] replace sons body
+            }
+            EconomicSet<List<Block>> tmp = EconomicSet.create(Equivalence.DEFAULT);  // If all sons have the same pinned path, don't use it at all
+            boolean nullExists = false;
+            for (List<Block> elem : pinnedPaths.getValues()) {
+                if (elem != null) {
+                    tmp.add(elem);
+                } else {
+                    nullExists = true;
+                }
+            }
+            if (tmp.size() == 1 && !nullExists) {
+                pinnedPaths.clear();
+            }
+        }
+        this.pinnedPaths = pinnedPaths;
+    }
+
+    private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> hostNodes) {
+        // Return true if the path has reachable merge nodes in the set of the hostNodes nodes
+        EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
+        for (AbstractBeginNode hostNode : hostNodes) {
+            if (reach.contains((AbstractMergeNode) hostNode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static EconomicSet<AbstractMergeNode> __pathReachable(List<Block> path) {
+        // Return set of Merge nodes which are reachable by the current path
+        EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
+        for (Block b : path) {
+            if (b.getEndNode() instanceof AbstractEndNode) {
+                Block succ = b.getFirstSuccessor();
+                if (succ.getBeginNode() instanceof AbstractMergeNode) {
+                    reach.add((AbstractMergeNode) succ.getBeginNode());
+                }
+            }
+        }
+        for (Block b : path) {
+            if (b.getBeginNode() instanceof AbstractMergeNode) {
+                reach.remove((AbstractMergeNode) b.getBeginNode());  // return only real-reachable
+            }
+        }
+        return reach;
     }
 }
 
@@ -285,25 +389,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 // ___states are used internally by ReentrantBlockIterator in order to ensure that the graph is properly visited
 
                 while (splits.size() > 0) {
-                    boolean finished = false;  // Are control split on top of the stack finished?
                     if (splits.peek().finished()) {
-                        if (splits.peek().getBlock().getSuccessorCount() == 2) {  // If/Invoke control split
-                            finished = true;
-                        } else {  // Switch control split
-                            EconomicSet<AbstractMergeNode> reachable = EconomicSet.create(Equivalence.DEFAULT);
-                            for (List<Block> son : splits.peek().getSonsPaths()) {
-                                reachable.addAll(__pathReachable(son));  // Add son's reachable merge nodes
-                            }
-                            for (List<Block> tail : splits.peek().getTailsPaths()) {
-                                reachable.remove((AbstractMergeNode) tail.get(0).getBeginNode());  // Remove already reached merge nodes
-                            }
-                            if (reachable.size() == 0) {  // All son's merges are reached
-                                finished = true;
-                            }
-                        }
-                    }
-
-                    if (finished) {
                         // Finished Control Split (on top of the stack)
                         ControlSplit stacksTop = splits.peek();
 
@@ -443,12 +529,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         ControlSplit cs = splits.pop();
 
         // In the case of the switch control split: eventually do a sons concatenation and fill up pinned path for every son
-        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = __sonsConcat(cs);
+        cs.sonsConcat();
 
         // Write out important attributes - add finished control split to the list of finished control split
         EconomicMap<String, Object> data = EconomicMap.create(Equivalence.IDENTITY);
         data.put("cs", cs);
-        data.put("pinnedPaths", pinnedPaths);
         data.put("graph", graph);
         data.put("schedule", schedule);
         fsplits.add(data);
@@ -480,87 +565,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         // Remove duplicates (we can have blocks duplication by branches: "continue" in switch, path tails in asymmetric switch)
         return newPath.stream().distinct().collect(Collectors.toList());
-    }
-
-    private static EconomicMap<AbstractBeginNode, List<Block>> __sonsConcat(ControlSplit cs) {
-        // Concatenate sons of switch control split
-        Block head = cs.getBlock();
-        int card = head.getSuccessorCount();
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-
-        EconomicMap<AbstractBeginNode, List<Block>> __fulltails = cs.getTailsMap();  // cs tails map
-        EconomicMap<AbstractBeginNode, List<Block>> __fullsons = cs.getSonsMap();  // cs sons map
-        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths in case of the switch control splits
-
-        if (card > 2) {  // switch cs case
-            while (__sons.advance()) {
-                AbstractBeginNode sonHead = __sons.getKey();
-                List<Block> sonPath = __sons.getValue();
-
-                pinnedPaths.put(sonHead, null);  // initially put null value
-
-                List<Block> newMeat = new ArrayList<>(sonPath);
-                while (true) {  // traverse following sons path
-                    EconomicSet<AbstractMergeNode> sonEnds = __pathReachable(newMeat);
-                    newMeat.clear();
-                    if (sonEnds.isEmpty())
-                        break;
-                    for (AbstractMergeNode nextNode : sonEnds) {
-                        if (__fulltails.containsKey(nextNode)) {
-                            // If tail is personal ended add it as a intermediate path, else add it as a pinned path and break
-                            List<Block> tailBody = __fulltails.get(nextNode);
-                            if (__hasInnerExit(tailBody, __fulltails.getKeys())) {  // Inner sub-path
-                                newMeat.addAll(new ArrayList<>(__fulltails.get(nextNode)));  // If this merge node is caused by continue inside switch statement, add appropriate tail blocks to the son's path
-                            } else {
-                                pinnedPaths.put(sonHead, new ArrayList<>(__fulltails.get(nextNode)));
-                                break;
-                            }
-                        }
-                    }
-                    if (newMeat.size() == 0 || pinnedPaths.get(sonHead) != null) {
-                        break;
-                    } else
-                        sonPath.addAll(new ArrayList<>(newMeat));
-                }
-
-                __fullsons.put(sonHead, sonPath);
-            }
-            EconomicSet<List<Block>> tmp = EconomicSet.create(Equivalence.DEFAULT);  // If all sons have the same pinned path, don't use it at all
-            boolean nullexists = false;
-            for (List<Block> elem : pinnedPaths.getValues())
-                if (elem != null)
-                    tmp.add(elem);
-                else
-                    nullexists = true;
-            if (tmp.size() == 1 && !nullexists)
-                pinnedPaths.clear();
-        }
-        return pinnedPaths;
-    }
-
-    private static EconomicSet<AbstractMergeNode> __pathReachable(List<Block> path) {
-        // Return set of Merge nodes which are reachable by the current path
-        EconomicSet<AbstractMergeNode> reach = EconomicSet.create(Equivalence.DEFAULT);
-        for (Block b : path) {
-            if (b.getEndNode() instanceof AbstractEndNode) {
-                Block succ = b.getFirstSuccessor();
-                if (succ.getBeginNode() instanceof AbstractMergeNode)
-                    reach.add((AbstractMergeNode) succ.getBeginNode());
-            }
-        }
-        for (Block b : path)
-            if (b.getBeginNode() instanceof AbstractMergeNode)
-                reach.remove((AbstractMergeNode) b.getBeginNode());  // return only real-reachable
-        return reach;
-    }
-
-    private static boolean __hasInnerExit(List<Block> path, Iterable<AbstractBeginNode> tailHeads) {
-        // Return true if the path has reachable merge nodes in the set of the tailHeads nodes
-        EconomicSet<AbstractMergeNode> reach = __pathReachable(path);
-        for (AbstractBeginNode thead : tailHeads)
-            if (reach.contains((AbstractMergeNode) thead))
-                return true;
-        return false;
     }
 
     private static void flushToDb(List<EconomicMap<String, Object>> fsplits, String methodName, long graphId) {
@@ -656,8 +660,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         EconomicMap<String, Object> fsplit = fsplits.get(i);
         ControlSplit cs = (ControlSplit) fsplit.get("cs");
         Block head = cs.getBlock();
-        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> __sons = cs.getSons();
-        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = (EconomicMap<AbstractBeginNode, List<Block>>) fsplit.get("pinnedPaths");
+        UnmodifiableMapCursor<AbstractBeginNode, List<Block>> sons = cs.getSons();
+        EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = cs.getPinnedPaths();
         StructuredGraph graph = (StructuredGraph) fsplit.get("graph");
         StructuredGraph.ScheduleResult schedule = (StructuredGraph.ScheduleResult) fsplit.get("schedule");
         int csdepth = (int) fsplit.get("CS Depth");
@@ -669,9 +673,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         String name = graph.method().getName();
 
         writerAttr.printf("%d,\"%s\",%s,%s,%d,%d,%d,%d", graphId, name, head.getEndNode().toString(), head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
-        while (__sons.advance()) {
-            AbstractBeginNode sonHead = __sons.getKey();
-            List<Block> sonPath = __sons.getValue();
+        while (sons.advance()) {
+            AbstractBeginNode sonHead = sons.getKey();
+            List<Block> sonPath = sons.getValue();
             List<Block> pinnedPath = pinnedPaths.get(sonHead);
             EconomicMap<String, Integer> sonData = getData(sonPath, schedule, fsplits);
 
