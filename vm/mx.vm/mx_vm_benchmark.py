@@ -306,12 +306,15 @@ class NativeImageVM(GraalVm):
             final_image_args = base_image_build_args + pgo_args
             mx.log('Building the final image with: ')
             mx.log(' ' + ' '.join([pipes.quote(str(arg)) for arg in final_image_args]))
+            print('\n\n\nCUGUR: final-iamge-args: ', final_image_args)
+            print('\n\n\nCUGUR: image-cwd: ', image_cwd)
             mx.run(final_image_args, out=None, err=None, cwd=image_cwd, nonZeroIsFatal=non_zero_is_fatal)
 
             # Execute the benchmark
             image_run_cmd = [image_path] + image_run_args + config.extra_run_args
             mx.log('Running the produced native executable with: ')
             mx.log(' ' + ' '.join([pipes.quote(str(arg)) for arg in image_run_cmd]))
+            #print('\n\n\nCUGUR: out:', out)
             mx.run(image_run_cmd, out=out, err=err, cwd=image_cwd, nonZeroIsFatal=non_zero_is_fatal)
 
 

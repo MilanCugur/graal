@@ -36,10 +36,18 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.oracle.graal.pointsto.infrastructure.OriginalClassProvider;
+import com.oracle.graal.pointsto.infrastructure.WrappedJavaMethod;
+import com.oracle.graal.pointsto.meta.AnalysisMethod;
+import com.oracle.graal.pointsto.meta.AnalysisType;
+import com.oracle.graal.pointsto.util.AnalysisError;
+import com.oracle.svm.hosted.meta.HostedType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 import com.oracle.svm.core.graal.nodes.ThrowBytecodeExceptionNode;
 import com.oracle.svm.hosted.meta.HostedMethod;
+import jdk.vm.ci.meta.ResolvedJavaType;
+import jdk.vm.ci.meta.Signature;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -299,9 +307,11 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     private static String PATH;  // Results directory
 
     static {
-        PATH = "./importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
-        boolean dirExist = new File(PATH).mkdir();
+        PATH = "importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
+        File f = new File(PATH);
+        boolean dirExist = f.mkdir();
         assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
+        System.out.println("Write attributes data to: "+f.getAbsolutePath());
     }
 
     public ParseImportantFeaturesPhase(String methodRegex) {
@@ -332,7 +342,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         }
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
 
-        Stack<ControlSplit> splits = new Stack<>();                     // Active Control Splits
+        Stack<ControlSplit> splits = new Stack<>();      // Active Control Splits
         List<ControlSplit> fsplits = new ArrayList<>();  // Finished Control Splits Data
 
         ReentrantBlockIterator.BlockIteratorClosure<TraversalState> CSClosure = new ReentrantBlockIterator.BlockIteratorClosure<TraversalState>() {
@@ -564,7 +574,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static void flushToDb(List<ControlSplit> fsplits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule) {
-        List<EconomicMap<String, Integer>> asplits = appendasplitsUtil(fsplits, schedule);
+        List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
         PrintWriter writerAttr = null;
         try {
@@ -582,7 +592,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         writerAttr.close();
     }
 
-    private static List<EconomicMap<String, Integer>> appendasplitsUtil(List<ControlSplit> fsplits, StructuredGraph.ScheduleResult schedule) {
+    private static List<EconomicMap<String, Integer>> appendAncestorsAttributesUtil(List<ControlSplit> fsplits, StructuredGraph.ScheduleResult schedule) {
         // Return 'asplits': additional CS fashion attributes to already finished control splits 'fsplits'
         int n = fsplits.size();
         List<EconomicMap<String, Integer>> asplits = new ArrayList<>(n);
@@ -787,18 +797,19 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     nexceptions++;
                 } else if (node instanceof InvokeNode) {
                     ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof HostedMethod) {
-                        try {
-                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
-                            if (jmethod.getDeclaringClass() == java.lang.Throwable.class && jmethod.equals(Throwable.class.getMethod("fillInStackTrace"))) {
-                                nexceptions++;
-                            }
-                        } catch (NoSuchMethodException e) {
-                            e.printStackTrace();
-                        } catch (MalformedParametersException e) {
-                            // its okay if there is no such a method, just don't increase the counter
-                        }
-                    }
+//                    if (tmethod instanceof HostedMethod) {
+//                        try {
+//                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+//                            if (jmethod.getDeclaringClass() == java.lang.Throwable.class && jmethod.equals(Throwable.class.getMethod("fillInStackTrace"))) {
+//                                nexceptions++;
+//                            }
+//                        } catch (NoSuchMethodException e) {
+//                            e.printStackTrace();
+//                            // its okay if there is no such a method: simply do not increase exception counter
+//                        } catch (MalformedParametersException e) {
+//                            // its okay if there is no such a method, just don't increase the counter
+//                        }
+//                    }
                 }
 
                 // N. Assertions
@@ -806,17 +817,41 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     nassertions++;
                 } else if (node instanceof InvokeNode) {
                     ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof HostedMethod) {
-                        try {
-                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
-                            if (jmethod.getDeclaringClass() == java.lang.AssertionError.class) {
-                                nassertions++;
-                            }
-                        } catch (MalformedParametersException e) {
-                            // its okay if there is "Wrong number of parameters in MethodParameters attribute" just don't increase the counter
+                    if (tmethod instanceof WrappedJavaMethod) {
+                        ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
+                        Executable jmethod = null;
+
+//                        ResolvedJavaMethod.Parameter[] parameters = tmethod.getParameters();
+//                        Class<?>[] parameterTypes = new Class<?>[parameters.length];
+//                        ResolvedJavaType declaringClassType = tmethod.getDeclaringClass();
+//                        HostedMethod hmethod = (HostedMethod) tmethod;
+//                        HostedType htype = hmethod.getDeclaringClass();
+//                        System.out.println("JAVA CLASS: " + htype.getJavaClass());
+
+                        if (w instanceof AnalysisMethod) {
+                            jmethod = ((AnalysisMethod) w).getJavaMethod();
+                        } else {
+                            jmethod = ((HostedMethod) w).getJavaMethod();
+                        }
+
+                        if (jmethod.getDeclaringClass() == java.lang.AssertionError.class) {
+                            nassertions++;
                         }
                     }
                 }
+
+//                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+//                    if (tmethod instanceof HostedMethod) {
+//                        try {
+//                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+//                            if (jmethod.getDeclaringClass() == java.lang.AssertionError.class) {
+//                                nassertions++;
+//                            }
+//                        } catch (MalformedParametersException e) {
+//                            // its okay if there is "Wrong number of parameters in MethodParameters attribute" just don't increase the counter
+//                        }
+//                    }
+//                }
 
                 // N. Control Sinks
                 if (node instanceof ControlSinkNode) {
@@ -847,20 +882,75 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 if (node instanceof ArrayCompareToNode || node instanceof ArrayEqualsNode || node instanceof ArrayRegionEqualsNode) {
                     narrcompare++;
                 } else if (node instanceof InvokeNode) {
-                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof HostedMethod) {
-                        try {
-                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
-                            if (jmethod.getDeclaringClass() == Arrays.class && jmethod.equals(Arrays.class.getMethod("compare", jmethod.getParameterTypes()))) {
-                                narrcompare++;
-                            }
-                        } catch (NoSuchMethodException e) {
-                            // it's okay if there no such a method, just don't increase the counter
-                        } catch (MalformedParametersException e) {
-                            // it' okay if there no valid parameters
-                        }
-                    }
+//                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+//                    if (tmethod instanceof WrappedJavaMethod) {
+//                        ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
+//                        Executable jmethod = null;
+//                        if (w instanceof AnalysisMethod) {
+//                            jmethod = ((AnalysisMethod) w).getJavaMethod();
+//                        } else {
+//                            jmethod = ((HostedMethod) w).getJavaMethod();
+//                        }
+//                        System.out.println("jmethod: "+jmethod.toString());
+//
+//                        try {
+//                            if (jmethod.getDeclaringClass() == Arrays.class && jmethod.equals(Arrays.class.getMethod("compare", jmethod.getParameterTypes()))) {
+//                                narrcompare++;
+//                            }
+//                        } catch (MalformedParametersException | NoSuchMethodException e) {
+//                            // it' okay if there no valid parameters
+//                        }
+//                    }
                 }
+
+
+//                    if(tmethod instanceof WrappedJavaMethod){
+//                        ResolvedJavaMethod w = ((WrappedJavaMethod)tmethod).getWrapped();
+//                        System.out.println("WRAPPED: "+w.toString());
+//                        if(w instanceof AnalysisMethod) {
+//                            AnalysisMethod a = (AnalysisMethod)w;
+//                            System.out.println("Njegov Wrapped: " + a.getWrapped());
+//                            System.out.println("WRAPPED2 DECL class: " + (((AnalysisMethod) ((WrappedJavaMethod) tmethod).getWrapped()).getWrapped()).getDeclaringClass());
+//                            System.out.println("WRAPPED DECL CLASS: " + (((WrappedJavaMethod) tmethod).getWrapped()).getDeclaringClass());
+//                            System.out.println("WRAPPED DECL CLASS HOST: " + (((WrappedJavaMethod) tmethod).getWrapped()).getDeclaringClass().getHostClass());
+//                            System.out.println("WRAPPED DECL CLASS JAVAKIND: " + (((WrappedJavaMethod) tmethod).getWrapped()).getDeclaringClass().getJavaKind());
+//                        }else
+//                            System.out.println("w is WrappedJavaMethod but not analysis method");
+//                    }
+
+                    // Try to extract Arrays.compare
+//                    ResolvedJavaMethod.Parameter[] parameters = tmethod.getParameters();
+//                    Class<?>[] parameterTypes = new Class<?>[parameters.length];
+//                    ResolvedJavaType declaringClassType = tmethod.getDeclaringClass();
+//                    Signature s = tmethod.getSignature();
+//                    System.out.println("tmethod: "+tmethod.toString());
+//                    System.out.println("parameters: "+Arrays.toString(parameters)+"\ndeclaringClassType: "+declaringClassType);
+//                    System.out.println("count(true): "+s.getParameterCount(true));
+//                    System.out.println("count(false): "+s.getParameterCount(false));
+                    //for(int i=0; i<s.getParameterCount(true); i++){
+                    //    System.out.println(s.getParameterType(i, null));
+                    //}
+//                    try {
+//                        System.out.println(Arrays.class.getMethod("compare"));
+//                    } catch (NoSuchMethodException e) {
+//                        e.printStackTrace();
+//                    }
+//                    for (int i = 0; i < parameterTypes.length; i++) {
+//                        parameterTypes[i] = OriginalClassProvider.getJavaClass(reflectionProvider, parameters[i].getType().resolve(declaringClassType));
+//                    }
+//                    if (tmethod instanceof HostedMethod) {
+//                        try {
+//                            Executable jmethod = ((HostedMethod) tmethod).getJavaMethod();
+//                            if (jmethod.getDeclaringClass() == Arrays.class && jmethod.equals(Arrays.class.getMethod("compare", jmethod.getParameterTypes()))) {
+//                                narrcompare++;
+//                            }
+//                        } catch (NoSuchMethodException e) {
+//                            // it's okay if there no such a method, just don't increase the counter
+//                        } catch (MalformedParametersException e) {
+//                            // it' okay if there no valid parameters
+//                        }
+//                    }
+//                }
 
                 // N. Array Copy
                 if (node instanceof BasicArrayCopyNode || node instanceof ArrayCopyCallNode) {
