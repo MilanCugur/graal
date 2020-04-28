@@ -24,17 +24,13 @@
  */
 package com.oracle.svm.test;
 
-import com.oracle.svm.hosted.meta.HostedMethod;
 import com.oracle.svm.hosted.phases.ParseImportantFeaturesPhase;
 import org.graalvm.compiler.core.test.GraalCompilerTest;
-import org.graalvm.compiler.graph.Node;
-import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.junit.Test;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 import java.io.*;
 import java.util.*;
@@ -84,17 +80,18 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             BufferedReader csv = new BufferedReader(new FileReader(attributes));
             String line;
             while ((line = csv.readLine()) != null) {
-                if (line.equals("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
+                if (line.equals("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
                     continue;
                 String[] data = line.split(",(?!\\s)");
                 String SourceFunction = data[1].replaceAll("\"", "");
                 assert SourceFunction.equals(snippet) : "ParseImportantFeaturesPhaseTest Error: Source function does not match.";
                 String NodeDescription = data[2];
-                String head = data[3];
+                int bci = Integer.parseInt(data[3]);
+                String head = data[4];
                 assert gt.containsKey(NodeDescription + "--" + head) : "ParseImportantFeaturesPhaseError: wrong Control Split in .csv file.";
                 HashSet<String> sons = gt.get(NodeDescription + "--" + head);
 
-                for (int index = 8; index < data.length; index++) {
+                for (int index = 9; index < data.length; index++) {
                     String[] branchData = data[index].split(";")[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
                     String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
@@ -259,22 +256,23 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             BufferedReader csv = new BufferedReader(new FileReader(attributes));
             String line;
             while ((line = csv.readLine()) != null) {
-                if (line.equals("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
+                if (line.equals("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
                     continue;
                 String[] data = line.split(",(?!\\s)");
                 String SourceFunction = data[1].replaceAll("\"", "");
                 assert SourceFunction.equals(snippet) : "ParseImportantFeaturesPhaseTest Error: Source function does not match.";
                 String NodeDescription = data[2];
-                String head = data[3];
+                int bci = Integer.parseInt(data[3]);
+                String head = data[4];
                 assert gt.containsKey(NodeDescription + "--" + head) : "ParseImportantFeaturesPhaseError: wrong Control Split in .csv file. Couldn't find: " + NodeDescription + "--" + head;
                 HashMap<String, String[]> sons = gt.get(NodeDescription + "--" + head);
                 HashMap<String, String> csData = new HashMap<>();
-                csData.put("CS Depth", data[4]);
-                csData.put("N. CS Father Blocks", data[5]);
-                csData.put("N. CS Father Fixed Nodes", data[6]);
-                csData.put("N. CS Father Floating Nodes", data[7]);
+                csData.put("CS Depth", data[5]);
+                csData.put("N. CS Father Blocks", data[6]);
+                csData.put("N. CS Father Fixed Nodes", data[7]);
+                csData.put("N. CS Father Floating Nodes", data[8]);
 
-                for (int index = 8; index < data.length; index++) {
+                for (int index = 9; index < data.length; index++) {
                     // src
                     String[] src = data[index].split(";");
 

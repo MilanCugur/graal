@@ -570,12 +570,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         PrintWriter writerAttr = null;
         try {
-            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + graph.method().getName() + "_" + graph.graphId() + ".csv")), true, StandardCharsets.US_ASCII);
+            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + graph.method().getName() + "_" + graph.getEntryBCI() + "_" + graph.graphId() + ".csv")), true, StandardCharsets.US_ASCII);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
         assert writerAttr != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a result writer.";
-        writerAttr.printf("Graph Id, Source Function, Node Description, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes%n");
+        writerAttr.printf("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes%n");
 
         for (int i = 0; i < fsplits.size(); i++) {
             flushToDbUtil(i, fsplits, asplits, writerAttr, graph, schedule);
@@ -668,8 +668,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         long graphId = graph.graphId();
         String name = graph.method().getName();
+        String csDescription = head.getEndNode().toString();
+        int csBCI = head.getEndNode().getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();
 
-        writerAttr.printf("%d,\"%s\",%s,%s,%d,%d,%d,%d", graphId, name, head.getEndNode().toString(), head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
+        writerAttr.printf("%d,\"%s\",%s,%d,%s,%d,%d,%d,%d", graphId, name, csDescription, csBCI, head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
         while (sons.advance()) {
             AbstractBeginNode sonHead = sons.getKey();
             List<Block> sonPath = sons.getValue();
