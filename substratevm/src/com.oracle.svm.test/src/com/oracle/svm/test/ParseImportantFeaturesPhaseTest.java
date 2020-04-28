@@ -24,14 +24,17 @@
  */
 package com.oracle.svm.test;
 
+import com.oracle.svm.hosted.meta.HostedMethod;
 import com.oracle.svm.hosted.phases.ParseImportantFeaturesPhase;
 import org.graalvm.compiler.core.test.GraalCompilerTest;
-import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.nodes.InvokeNode;
 import org.graalvm.compiler.nodes.StructuredGraph;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.junit.Test;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 import java.io.*;
 import java.util.*;
@@ -46,15 +49,14 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         p.apply(graph, null);
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-        try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
+        try {
             SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do scheduling cause of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
-        StructuredGraph.ScheduleResult r = graph.getLastSchedule();
 
         // Parse ground truth
-        HashMap<String, HashSet<String>> gt = new HashMap<String, HashSet<String>>();
+        HashMap<String, HashSet<String>> gt = new HashMap<>();
         String[] lines = groundTruth.split("\\r?\\n");
         for (String line : lines) {
             String[] parts = line.split("-");
@@ -63,10 +65,10 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             HashSet<String> sons = new HashSet<>();
             for (int index = 2; index < parts.length; index++) {
                 String son = parts[index];
-                String[] sonData = son.split("\\]\\[");
+                String[] sonData = son.split("]\\[");
                 assert sonData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Ground Truth data invalid.";
                 String branch = __sortPath(sonData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
-                String tail = __sortPath(sonData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
+                String tail = __sortPath(sonData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
                 son = branch + "--" + tail;
                 sons.add(son);
             }
@@ -96,7 +98,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     String[] branchData = data[index].split(";")[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
                     String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
-                    String tail = __sortPath(branchData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
+                    String tail = __sortPath(branchData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
                     if (!sons.contains(branch + "--" + tail)) {
                         System.out.println("ParseImportantFeaturesPhaseTest error on function: " + snippet + " invalid son parsed: " + branch + "--" + tail);
                         nerror += 1;
@@ -134,11 +136,11 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         }
 
         if (filesFeatures.size() == 0) return null;
-        File min = Collections.min(filesFeatures, (o1, o2) -> Long.valueOf(o2.lastModified()).compareTo(o1.lastModified()));
+        File min = Collections.min(filesFeatures, (o1, o2) -> Long.compare(o2.lastModified(), o1.lastModified()));
         if (min == null)
             return null;
         List<File> targetData = new ArrayList<>();
-        for (File file : min.listFiles()) {
+        for (File file : Objects.requireNonNull(min.listFiles())) {
             if (file.isFile() && file.getName().contains("importantAttributes_" + snippet + "_")) {
                 targetData.add(file);
             }
@@ -161,7 +163,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         p.apply(graph, null);
 
         ControlFlowGraph cfg = ControlFlowGraph.compute(graph, true, true, true, true);
-        try (DebugContext.Scope scheduleScope = graph.getDebug().scope(SchedulePhase.class)) {
+        try {
             SchedulePhase.run(graph, SchedulePhase.SchedulingStrategy.LATEST, cfg);  // Do scheduling cause of floating point nodes
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
@@ -196,15 +198,9 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             //    System.out.println(node);
             //    if (node instanceof InvokeNode) {
             //        ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-            //        System.out.println("tmetod: " + tmethod);
-            //        if (tmethod instanceof HostedMethod) {
-            //            System.out.println("tmethod is instanceof HostedMethod");
-            //        } else {
-            //            System.out.println("tmethod is not instanceof  HostedMethod");
-            //       }
+            //        System.out.println("tmethod: "+tmethod);
             //        System.out.println("Class: " + tmethod.getClass());
             //        System.out.println("Decl class: " + tmethod.getDeclaringClass());
-            //        System.out.println("Host class" + tmethod.getDeclaringClass().getHostClass());
             //    }
             //}
             //System.out.println("==========");
@@ -223,7 +219,6 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
         } catch (Throwable t) {
             throw graph.getDebug().handle(t);
         }
-        StructuredGraph.ScheduleResult r = graph.getLastSchedule();
 
         // Parse ground truth
         HashMap<String, HashMap<String, String[]>> gt = new HashMap<>();
@@ -240,10 +235,10 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
 
                 // branch + tail info
                 String son = src[0];
-                String[] sonData = son.split("\\]\\[");
+                String[] sonData = son.split("]\\[");
                 assert sonData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Ground Truth data invalid.";
                 String branch = __sortPath(sonData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
-                String tail = __sortPath(sonData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
+                String tail = __sortPath(sonData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
 
                 // attributes info
                 // ex. "17|If-B4-[B5][null];[0][0]:[0][0]"
@@ -284,7 +279,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     String[] src = data[index].split(";");
 
                     // son gt info
-                    HashMap<String, String> sonData = new HashMap<String, String>(csData);
+                    HashMap<String, String> sonData = new HashMap<>(csData);
                     for (int i = 1; i < src.length; i++) {
                         // ex.: "N. Array Store: [0][0]"
                         String attr = src[i];
@@ -295,7 +290,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     String[] branchData = src[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
                     String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
-                    String tail = __sortPath(branchData[1].replaceAll("\\]", "").replaceAll("^\"|\"$", ""));
+                    String tail = __sortPath(branchData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
 
                     if (!sons.containsKey(branch + "--" + tail)) {
                         System.out.println("ParseImportantFeaturesPhaseTest error on function: " + snippet + " Error son not found: " + branch + "--" + tail);
@@ -329,8 +324,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
 
     private boolean __compare(String[] attributesTruth, String[] gtData, HashMap<String, String> parsedData) {
         // [2][0] vs [2][0] or [1] vs 1
-        HashSet<String> unique = new HashSet<>();
-        unique.addAll(Arrays.asList(new String[]{"CS Depth", "N. CS Father Blocks", "N. CS Father Fixed Nodes", "N. CS Father Floating Nodes"}));
+        HashSet<String> unique = new HashSet<>(Arrays.asList("CS Depth", "N. CS Father Blocks", "N. CS Father Fixed Nodes", "N. CS Father Floating Nodes"));
 
         for (int i = 0; i < attributesTruth.length; i++) {
             String attribute = attributesTruth[i];
@@ -343,10 +337,10 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     return false;
                 }
             } else {
-                int gtBranch = Integer.parseInt(gt.split("\\]\\[")[0].replace("[", "").replace("]", ""));
-                int gtTail = Integer.parseInt(gt.split("\\]\\[")[1].replace("[", "").replace("]", ""));
-                int parsedBranch = Integer.parseInt(parsed.split("\\]\\[")[0].replace("[", "").replace("]", ""));
-                int parsedTail = Integer.parseInt(parsed.split("\\]\\[")[1].replace("[", "").replace("]", ""));
+                int gtBranch = Integer.parseInt(gt.split("]\\[")[0].replace("[", "").replace("]", ""));
+                int gtTail = Integer.parseInt(gt.split("]\\[")[1].replace("[", "").replace("]", ""));
+                int parsedBranch = Integer.parseInt(parsed.split("]\\[")[0].replace("[", "").replace("]", ""));
+                int parsedTail = Integer.parseInt(parsed.split("]\\[")[1].replace("[", "").replace("]", ""));
                 if (gtBranch != parsedBranch || gtTail != parsedTail) {
                     System.out.println("__compare Error: TRUE" + gt + " PARSED: " + parsed);
                     return false;

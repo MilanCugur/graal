@@ -302,10 +302,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     static {
         PATH = "importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
-        File f = new File(PATH);
-        boolean dirExist = f.mkdir();
+        boolean dirExist = new File(PATH).mkdir();
         assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
-        System.out.println("Write attributes data to: "+f.getAbsolutePath());
     }
 
     public ParseImportantFeaturesPhase(String methodRegex) {
@@ -787,49 +785,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
 
                 // N. Exceptions
-                if (node instanceof BytecodeExceptionNode || node instanceof ThrowBytecodeExceptionNode) {
+                if (node instanceof BytecodeExceptionNode || node instanceof ThrowBytecodeExceptionNode || __getInvoke(node, java.lang.Throwable.class, "fillInStackTrace")) {
                     nexceptions++;
-                } else if (node instanceof InvokeNode) {
-                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof WrappedJavaMethod) {
-                        ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
-                        Class<?> methodClass = null;
-                        if (w instanceof AnalysisMethod) {
-                            HostedMethod hmethod = (HostedMethod) tmethod;
-                            HostedType htype = hmethod.getDeclaringClass();
-                            methodClass = htype.getJavaClass();
-                        } else {
-                            AnalysisMethod amethod = (AnalysisMethod) tmethod;
-                            AnalysisType atype = amethod.getDeclaringClass();
-                            methodClass = atype.getJavaClass();
-                        }
-                        if (methodClass == java.lang.Throwable.class && tmethod.getName().equals("fillInStackTrace")) {
-                            nexceptions++;
-                        }
-                    }
                 }
 
                 // N. Assertions
-                if (node instanceof AssertionNode) {
+                if (node instanceof AssertionNode || __getInvoke(node, java.lang.AssertionError.class, "<init>")) {
                     nassertions++;
-                } else if (node instanceof InvokeNode) {
-                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof WrappedJavaMethod) {
-                        ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
-                        Class<?> methodClass = null;
-                        if (w instanceof AnalysisMethod) {
-                            HostedMethod hmethod = (HostedMethod) tmethod;
-                            HostedType htype = hmethod.getDeclaringClass();
-                            methodClass = htype.getJavaClass();
-                        } else {
-                            AnalysisMethod amethod = (AnalysisMethod) tmethod;
-                            AnalysisType atype = amethod.getDeclaringClass();
-                            methodClass = atype.getJavaClass();
-                        }
-                        if (methodClass == java.lang.AssertionError.class) {
-                            nassertions++;
-                        }
-                    }
                 }
 
                 // N. Control Sinks
@@ -858,26 +820,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
 
                 // N. Array Compare
-                if (node instanceof ArrayCompareToNode || node instanceof ArrayEqualsNode || node instanceof ArrayRegionEqualsNode) {
+                if (node instanceof ArrayCompareToNode || node instanceof ArrayEqualsNode || node instanceof ArrayRegionEqualsNode || __getInvoke(node, java.util.Arrays.class, "compare")) {
                     narrcompare++;
-                } else if (node instanceof InvokeNode) {
-                    ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
-                    if (tmethod instanceof WrappedJavaMethod) {
-                        ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
-                        Class<?> methodClass = null;
-                        if (w instanceof AnalysisMethod) {
-                            HostedMethod hmethod = (HostedMethod) tmethod;
-                            HostedType htype = hmethod.getDeclaringClass();
-                            methodClass = htype.getJavaClass();
-                        } else {
-                            AnalysisMethod amethod = (AnalysisMethod) tmethod;
-                            AnalysisType atype = amethod.getDeclaringClass();
-                            methodClass = atype.getJavaClass();
-                        }
-                        if (methodClass == Arrays.class && tmethod.getName().equals("compare")) {
-                            narrcompare++;
-                        }
-                    }
                 }
 
                 // N. Array Copy
@@ -996,6 +940,27 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         data.put("N. Raw Memory Access", nrawmemaccess);
 
         return data;
+    }
+
+    private static boolean __getInvoke(Node node, Class<?> targetClass, String targetName) {
+        if (node instanceof InvokeNode) {
+            ResolvedJavaMethod tmethod = ((InvokeNode) node).callTarget().targetMethod();
+            if (tmethod instanceof WrappedJavaMethod) {
+                ResolvedJavaMethod w = ((WrappedJavaMethod) tmethod).getWrapped();
+                Class<?> methodClass;
+                if (w instanceof AnalysisMethod) {
+                    HostedMethod hmethod = (HostedMethod) tmethod;
+                    HostedType htype = hmethod.getDeclaringClass();
+                    methodClass = htype.getJavaClass();
+                } else {
+                    AnalysisMethod amethod = (AnalysisMethod) tmethod;
+                    AnalysisType atype = amethod.getDeclaringClass();
+                    methodClass = atype.getJavaClass();
+                }
+                return methodClass == targetClass && tmethod.getName().equals(targetName);
+            }
+        }
+        return false;
     }
 
     private static int __getDepth(Block head, List<ControlSplit> fsplits, List<EconomicMap<String, Integer>> asplits) {
