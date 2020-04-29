@@ -24,10 +24,7 @@
  */
 package com.oracle.svm.hosted.phases;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
@@ -38,10 +35,13 @@ import com.oracle.graal.pointsto.infrastructure.WrappedJavaMethod;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
 import com.oracle.svm.hosted.meta.HostedType;
+import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 
 import com.oracle.svm.core.graal.nodes.ThrowBytecodeExceptionNode;
 import com.oracle.svm.hosted.meta.HostedMethod;
+import jdk.vm.ci.meta.ResolvedJavaType;
+import jdk.vm.ci.meta.Signature;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -297,13 +297,21 @@ class TraversalState {
 
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
-    private String methodRegex;  // Functions targeted for attribute parsing
-    private static String PATH;  // Results directory
+    private String methodRegex;         // Functions targeted for attribute parsing
+    private static String PATH;         // Results directory
+    private PrintWriter writerMethods;  // Methods info: return value + name + parameters types
 
     static {
         PATH = "importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
         boolean dirExist = new File(PATH).mkdir();
         assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
+        writerMethods = null;
+        try {
+            writerMethods = new PrintWriter(new FileOutputStream(new File(PATH, "importantMethods.txt")));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        assert writerMethods != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a result writer.";
     }
 
     public ParseImportantFeaturesPhase(String methodRegex) {
@@ -333,6 +341,28 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             throw graph.getDebug().handle(t);
         }
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
+
+//        if(graph.method().getName().equals("copyAlignedObject")) {
+//            try {
+//                FileWriter tmp = new FileWriter("./copyAlignedObject.gt");
+//                for (Node n : graph.getNodes())
+//                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999)+"\n");
+//                tmp.close();
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            }
+//        }
+
+        synchronized (writerMethods) {
+            ResolvedJavaMethod m = graph.method();
+            Signature s = m.getSignature();
+            writerMethods.write(m.getName()+","+m.getDeclaringClass().toJavaName(true)+","+s.getReturnType(null).toJavaName(true));
+            JavaType[] params = s.toParameterTypes(null);
+            for (JavaType param : params) {
+                writerMethods.write("," + param.toJavaName(true));
+            }
+            writerMethods.write("\n");
+        }
 
         Stack<ControlSplit> splits = new Stack<>();      // Active Control Splits
         List<ControlSplit> fsplits = new ArrayList<>();  // Finished Control Splits Data
@@ -570,7 +600,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         PrintWriter writerAttr = null;
         try {
-            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + graph.method().getName() + "_" + graph.getEntryBCI() + "_" + graph.graphId() + ".csv")), true, StandardCharsets.US_ASCII);
+            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + graph.method().getName() + "_" + graph.graphId() + ".csv")), true, StandardCharsets.US_ASCII);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
