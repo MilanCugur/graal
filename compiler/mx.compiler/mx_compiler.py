@@ -585,7 +585,8 @@ def _gate_function_check(groundTruthData, attributesPath, resultData, verbose=Fa
     csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'head', 'Valid Control Split'])
     csv_writer.writeheader()
     for parsedData in os.listdir(attributesPath):
-        assert parsedData.endswith(".csv")
+        if not parsedData.endswith(".csv"):
+            continue  # .gt files
         with open(os.path.join(attributesPath, parsedData), mode='r') as csv_read:
             csv_reader = csv.DictReader(csv_read)
 
@@ -610,7 +611,7 @@ def _gate_function_check(groundTruthData, attributesPath, resultData, verbose=Fa
                     tmp = cs.split(";")[0].split('][')
                     if len(tmp)!=2:
                         mx.log_error("File {} corrupted (branch tail information not provided).".format(parsedData))
-                    son, tail = tmp[0], tmp[1]
+                    son, tail = tmp[0].split(":")[0], tmp[1]
                     son = frozenset(map(lambda x: x.strip(), son.replace('[','').replace(']', '').split(",")))  # Appropriate son's blocks
                     tail = frozenset(map(lambda x: x.strip(), tail.replace('[','').replace(']', '').split(",")))  # Appropriate tail blocks
                     branchValid = (son, tail) in orign  # Compare branch data: (branch_blocks, pinned_tail_blocks)

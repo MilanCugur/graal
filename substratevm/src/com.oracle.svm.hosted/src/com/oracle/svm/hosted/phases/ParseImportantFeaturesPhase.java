@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -18,7 +18,7 @@
  * 2 along with this work; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA.
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
@@ -588,10 +588,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         assert writerMethods != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a results writer.";
         ResolvedJavaMethod m = graph.method();
         Signature s = m.getSignature();
-        writerMethods.write(graph.graphId() + "," + m.getName() + "," + m.getDeclaringClass().toJavaName(true) + "," + s.getReturnType(null).toJavaName(true));
+        writerMethods.printf("%d,\"%s\",%d,\"%s\",\"%s\"", graph.graphId(), m.getName(), s.getParameterCount(false), m.getDeclaringClass().toJavaName(true), s.getReturnType(null).toJavaName(true));
         JavaType[] params = s.toParameterTypes(null);
         for (JavaType param : params) {
-            writerMethods.write("," + param.toJavaName(true));
+            writerMethods.printf(",\"%s\"", param.toJavaName(true));
         }
         writerMethods.write("\n");
         writerMethods.close();
@@ -701,12 +701,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         writerAttr.printf("%d,\"%s\",%s,%d,%s,%d,%d,%d,%d", graphId, name, csDescription, csBCI, head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
         while (sons.advance()) {
             AbstractBeginNode sonHead = sons.getKey();
+            int sonBCI = sonHead.getNodeSourcePosition() == null ? -9999 : sonHead.getNodeSourcePosition().getBCI();
             List<Block> sonPath = sons.getValue();
             List<Block> pinnedPath = pinnedPaths.get(sonHead);
             EconomicMap<String, Integer> sonData = __getData(sonPath, fsplits, asplits, schedule);
 
             if (sonHead instanceof LoopExitNode) {
-                writerAttr.printf(",\"[x(%s)][null]\"", sonHead.toString());  // x is an abbreviation for LoopExitNode
+                writerAttr.printf(",\"[x(%s):%d][null]\"", sonHead.toString(), sonBCI);  // x is an abbreviation for LoopExitNode
                 for (String attribute : sonData.getKeys()) {
                     switch (attribute) {
                         case "Loop Depth":
@@ -722,7 +723,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     }
                 }
             } else {
-                writerAttr.printf(",\"%s%s\"", sonPath, pinnedPath == null ? "[null]" : pinnedPath);
+                writerAttr.printf(",\"%s:%d]%s\"", sonPath.toString().substring(0, sonPath.toString().length()-1), sonBCI, pinnedPath == null ? "[null]" : pinnedPath);
                 EconomicMap<String, Integer> pinnedData = __getData(pinnedPath, fsplits, asplits, schedule);
                 for (String attribute : sonData.getKeys())  // always preserves insertion order when iterating over keys
                     writerAttr.printf("; %s: [%d][%d]", attribute, sonData.get(attribute), pinnedData != null ? pinnedData.get(attribute) : 0);

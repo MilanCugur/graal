@@ -94,7 +94,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                 for (int index = 9; index < data.length; index++) {
                     String[] branchData = data[index].split(";")[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
-                    String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
+                    String branch = __sortPath(branchData[0].split(":")[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
                     String tail = __sortPath(branchData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
                     if (!sons.contains(branch + "--" + tail)) {
                         System.out.println("ParseImportantFeaturesPhaseTest error on function: " + snippet + " invalid son parsed: " + branch + "--" + tail);
@@ -287,7 +287,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
                     // head + tail info
                     String[] branchData = src[0].split(Pattern.quote("]["));
                     assert branchData.length == 2 : "ParseImportantFeaturesPhaseTest Error: Invalid branch data.";
-                    String branch = __sortPath(branchData[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
+                    String branch = __sortPath(branchData[0].split(":")[0].replaceAll("\\[", "").replaceAll("^\"|\"$", ""));
                     String tail = __sortPath(branchData[1].replaceAll("]", "").replaceAll("^\"|\"$", ""));
 
                     if (!sons.containsKey(branch + "--" + tail)) {
