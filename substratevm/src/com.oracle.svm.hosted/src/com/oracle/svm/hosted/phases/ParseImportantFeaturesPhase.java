@@ -1,4 +1,4 @@
- /*
+/*
  * Copyright (c) 2018, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -48,6 +48,7 @@ import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.NodeSourcePosition;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
@@ -83,6 +84,7 @@ class ControlSplit {
     private EconomicSet<AbstractBeginNode> tailHeads;                // If I go through my personal merge and I am not complete at that time. Simply code propagation to predecessor control splits. If I am finished at my personal merge but that merge is continue-in-switch caused.
     private EconomicMap<AbstractBeginNode, List<Block>> tailBlocks;  // Tail blocks appended to this control split, for propagation to father blocks
     private EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths; // Asymmetric switch case: paths that go out from each son to the new end
+    private EconomicMap<AbstractBeginNode, Integer> sonsKeys;        // Sons ordering - due to profiles parsing
 
     public ControlSplit(Block block, List<Block> path) {
         assert block.getEndNode() instanceof ControlSplitNode : "ParseImportantFeaturesError: Control Split can be instantiated only with Control Split Node (as end).";
@@ -90,12 +92,25 @@ class ControlSplit {
         this.pathToBlock = new ArrayList<>(path);
         this.sonsBlocks = EconomicMap.create(Equivalence.DEFAULT);
         this.sonsHeads = EconomicSet.create(Equivalence.DEFAULT);
-        for (Block son : block.getSuccessors()) {
-            this.sonsHeads.add(son.getBeginNode());
+        this.sonsKeys = EconomicMap.create(Equivalence.DEFAULT);
+        for (int i = 0; i < block.getSuccessorCount(); i++) {
+            AbstractBeginNode sonHead = block.getSuccessors()[i].getBeginNode();
+            this.sonsHeads.add(sonHead);
+            this.sonsKeys.put(sonHead, i); // Assume ordered 1, 2, ..., n
+            if (block.getEndNode() instanceof IfNode) {
+                IfNode cs = (IfNode) block.getEndNode();
+                assert cs.trueSuccessor() != null && cs.falseSuccessor() != null : "ParseImportantFeaturesPhaseError: no true/false successor of if.";
+                assert sonHead.equals(i == 0 ? cs.trueSuccessor() : cs.falseSuccessor()) : "Error: if primary successor doesnt have code 0!";
+            }
         }
         this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
         this.tailBlocks = EconomicMap.create(Equivalence.DEFAULT);
         this.pinnedPaths = null;
+    }
+
+    public Integer getSonKey(AbstractBeginNode sonHead) {
+        assert this.sonsKeys.containsKey(sonHead) : "ParseImportantFeaturesPhaseError: Searching for the key of the invalid son.";
+        return this.sonsKeys.get(sonHead);
     }
 
     public Block getBlock() {
@@ -107,6 +122,10 @@ class ControlSplit {
     }
 
     // Sons operations
+    public int liveSons() {
+        return this.sonsHeads.size();
+    }
+
     public Boolean finished() {  // Are control split on top of the stack finished?
         if (this.sonsHeads.isEmpty()) {
             if (this.block.getSuccessorCount() == 2) {  // If/Invoke control split
@@ -176,7 +195,7 @@ class ControlSplit {
     }
 
     public void sonsConcat() {  // Concatenate sons of switch control split; additionally calculate pinned paths
-        assert this.finished() : "ParseImportantFeaturesPhaseError: Cannot concat sons of unfinished control split.";
+        assert this.liveSons() == 0 : "ParseImportantFeaturesPhaseError: Cannot concat sons of unfinished control split.";
         EconomicMap<AbstractBeginNode, List<Block>> pinnedPaths = EconomicMap.create(Equivalence.DEFAULT);  // pinned sons paths
 
         if (this.getBlock().getSuccessorCount() > 2) {
@@ -332,17 +351,6 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             throw graph.getDebug().handle(t);
         }
         StructuredGraph.ScheduleResult schedule = graph.getLastSchedule();
-
-//        if(graph.method().getName().equals("copyAlignedObject")) {
-//            try {
-//                FileWriter tmp = new FileWriter("./copyAlignedObject.gt");
-//                for (Node n : graph.getNodes())
-//                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999)+"\n");
-//                tmp.close();
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }
 
         Stack<ControlSplit> splits = new Stack<>();      // Active Control Splits
         List<ControlSplit> fsplits = new ArrayList<>();  // Finished Control Splits Data
@@ -535,7 +543,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private static List<Block> writeOutFromStack(Stack<ControlSplit> splits, List<ControlSplit> fsplits) {
         // Pop element from the top of a stack and append it to the list of finished Control Splits; return integrated path
-        assert splits.size() > 0 && splits.peek().finished() : "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
+        assert splits.size() > 0 && splits.peek().liveSons() == 0 : "ParseImportantFeaturesError: invalid call of 'writeOutFromStack'";
 
         // pop finished cs
         ControlSplit cs = splits.pop();
@@ -576,6 +584,8 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static void flushToDb(List<ControlSplit> fsplits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule) {
+        bciFiltering(fsplits);
+
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
         // Print gt data
@@ -604,11 +614,72 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             e.printStackTrace();
         }
         assert writerAttr != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a result writer.";
-        writerAttr.printf("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes%n");
+        writerAttr.printf("Graph Id,Source Function,Node Description,Node BCI,head,CD Depth,N. CS Father Blocks,N. CS Father Fixed Nodes,N. CS Father Floating Nodes%n");
         for (int i = 0; i < fsplits.size(); i++) {
             flushToDbUtil(i, fsplits, asplits, writerAttr, graph, schedule);
         }
         writerAttr.close();
+    }
+
+    /**
+     * If two {@link IfNode}s have the same source position we need to decide which node to
+     * instrument. We always choose the one with probability 0.5. Rationale is that the node that
+     * was injected probably should not be instrumented.
+     */
+    private static void bciFiltering(List<ControlSplit> fsplits) {
+        EconomicMap<NodeSourcePosition, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
+        for (int i = 0; i < fsplits.size(); i++) {
+            ControlSplitNode csnode = (ControlSplitNode) fsplits.get(i).getBlock().getEndNode();
+            if (!(csnode instanceof IfNode)) { // Try to only use if nodes
+                continue;
+            }
+            NodeSourcePosition pos = csnode.getNodeSourcePosition();
+            if (!(bciPool.containsKey(pos))) {
+                List<Integer> ids = new ArrayList<>();
+                ids.add(i);
+                bciPool.put(pos, ids);
+            } else {
+                bciPool.get(pos).add(i);
+            }
+        }
+        List<Integer> trash = new ArrayList<>();
+        for (NodeSourcePosition pos : bciPool.getKeys()) {
+            List<Integer> ids = bciPool.get(pos);
+            while (ids.size() > 1) {
+                Integer index0 = ids.get(0);
+                Integer index1 = ids.get(1);
+                ControlSplitNode n0 = (ControlSplitNode) fsplits.get(index0).getBlock().getEndNode();
+                ControlSplitNode n1 = (ControlSplitNode) fsplits.get(index1).getBlock().getEndNode();
+                ControlSplitNode cs = __chooseRelevantConditionalNode(n0, n1);
+                if (cs.equals(n0)) {
+                    ids.remove(index1);
+                    trash.add(index1);
+                } else {
+                    ids.remove(index0);
+                    trash.add(index0);
+                }
+            }
+        }
+        trash.sort(Collections.reverseOrder());  // sort list in reverse order cause of the index deletion
+        for (Integer id : trash) {
+            fsplits.remove((int) id);
+        }
+    }
+
+    private static ControlSplitNode __chooseRelevantConditionalNode(ControlSplitNode n1, ControlSplitNode n2) {
+        assert n1.getNodeSourcePosition().equals(n2.getNodeSourcePosition()) : "This method distinguishes between nodes with the same source position.";
+        // assert n1.getNodeSourcePosition().getBCI() < 0 || !(__hasDefaultProbability(n1) && __hasDefaultProbability(n2)) : "Two nodes with the same source position that is positive should not have default probability.";
+        return __hasDefaultProbability(n1) ? n1 : n2;
+    }
+
+    public static boolean __hasDefaultProbability(ControlSplitNode n1) {
+        double defaultProbability = 1.0 / n1.successors().count();
+        for (Node s : n1.successors().snapshot()) {
+            if (Double.compare(n1.probability((AbstractBeginNode) s), defaultProbability) != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static List<EconomicMap<String, Integer>> appendAncestorsAttributesUtil(List<ControlSplit> fsplits, StructuredGraph.ScheduleResult schedule) {
@@ -702,12 +773,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         while (sons.advance()) {
             AbstractBeginNode sonHead = sons.getKey();
             int sonBCI = sonHead.getNodeSourcePosition() == null ? -9999 : sonHead.getNodeSourcePosition().getBCI();
+            Integer sonKey = cs.getSonKey(sonHead);
             List<Block> sonPath = sons.getValue();
             List<Block> pinnedPath = pinnedPaths.get(sonHead);
             EconomicMap<String, Integer> sonData = __getData(sonPath, fsplits, asplits, schedule);
 
             if (sonHead instanceof LoopExitNode) {
-                writerAttr.printf(",\"[x(%s):%d][null]\"", sonHead.toString(), sonBCI);  // x is an abbreviation for LoopExitNode
+                writerAttr.printf(",\"[x(%s):%d:%d][null]\"", sonHead.toString(), sonBCI, sonKey);  // x is an abbreviation for LoopExitNode
                 for (String attribute : sonData.getKeys()) {
                     switch (attribute) {
                         case "Loop Depth":
@@ -723,7 +795,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                     }
                 }
             } else {
-                writerAttr.printf(",\"%s:%d]%s\"", sonPath.toString().substring(0, sonPath.toString().length()-1), sonBCI, pinnedPath == null ? "[null]" : pinnedPath);
+                writerAttr.printf(",\"%s:%d:%d]%s\"", sonPath.toString().substring(0, sonPath.toString().length() - 1), sonBCI, sonKey, pinnedPath == null ? "[null]" : pinnedPath);
                 EconomicMap<String, Integer> pinnedData = __getData(pinnedPath, fsplits, asplits, schedule);
                 for (String attribute : sonData.getKeys())  // always preserves insertion order when iterating over keys
                     writerAttr.printf("; %s: [%d][%d]", attribute, sonData.get(attribute), pinnedData != null ? pinnedData.get(attribute) : 0);
