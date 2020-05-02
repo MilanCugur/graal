@@ -584,7 +584,48 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static void flushToDb(List<ControlSplit> fsplits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule) {
-        bciFiltering(fsplits);
+        if(graph.method().getName().equals("copyAlignedObject")) {
+            try {
+                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectFULL.gt");
+                tmp.write("NODES: \n");
+                for (Node n : graph.getNodes()) {
+                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
+                    if(n instanceof IfNode){
+                        AbstractBeginNode t = ((IfNode)n).trueSuccessor();
+                        AbstractBeginNode f = ((IfNode)n).falseSuccessor();
+                        tmp.write(" trueSuccBCI: "+(t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+                        tmp.write(" falseSuccBCI: "+(f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+                    }
+                    tmp.write("\n");
+                }
+                tmp.write("FSPLITS: \n");
+                for(ControlSplit cs : fsplits){
+                    tmp.write("head: "+cs.getBlock().getEndNode()+"head BCI: "+cs.getBlock().getEndNode().getNodeSourcePosition().getBCI()+"NSP: "+cs.getBlock().getEndNode().getNodeSourcePosition().toString()+"RM: "+cs.getBlock().getEndNode().getNodeSourcePosition().getRootMethod()+"\n");
+                }
+                tmp.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        if(graph.method().getName().equals("copyAlignedObject")) {
+            try {
+                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectBEFORE.txt");
+                tmp.write("BEFORE: "+fsplits.size());
+                tmp.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        bciFiltering(fsplits, graph.method().getName());
+        if(graph.method().getName().equals("copyAlignedObject")) {
+            try {
+                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectAFTER.txt");
+                tmp.write("AFTER: "+fsplits.size());
+                tmp.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
@@ -626,43 +667,102 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
      * instrument. We always choose the one with probability 0.5. Rationale is that the node that
      * was injected probably should not be instrumented.
      */
-    private static void bciFiltering(List<ControlSplit> fsplits) {
-        EconomicMap<NodeSourcePosition, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
+    private static void bciFiltering(List<ControlSplit> fsplits, String name) {
+        FileWriter tmp = null;
+        if(name.equals("copyAlignedObject")){
+            try {
+                tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectDELETE.txt");
+                tmp.write("===================================================\n");
+                for(int i=0; i<fsplits.size(); i++){
+                    for(int j=0; j<fsplits.size(); j++){
+                        tmp.write(i+"-"+j+" compare node source positions: "+fsplits.get(i).getBlock().getEndNode().getNodeSourcePosition().equals(fsplits.get(j).getBlock().getEndNode().getNodeSourcePosition())+" ");
+                        tmp.write(" compare bcis positions: i: "+fsplits.get(i).getBlock().getEndNode().getNodeSourcePosition().getBCI()+", j: "+fsplits.get(j).getBlock().getEndNode().getNodeSourcePosition().getBCI()+"\n");
+                    }
+                }
+                tmp.write("===================================================\n\n");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        EconomicMap<Integer, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
         for (int i = 0; i < fsplits.size(); i++) {
             ControlSplitNode csnode = (ControlSplitNode) fsplits.get(i).getBlock().getEndNode();
-            if (!(csnode instanceof IfNode)) { // Try to only use if nodes
-                continue;
-            }
-            NodeSourcePosition pos = csnode.getNodeSourcePosition();
+//            if (!(csnode instanceof IfNode)) { // Try to only use if nodes
+//                continue;
+//            }
+            Integer pos = csnode.getNodeSourcePosition().getBCI();
             if (!(bciPool.containsKey(pos))) {
+                if(tmp!=null) {
+                    try {
+                        tmp.write("Create new pos: "+csnode+"\n");
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
                 List<Integer> ids = new ArrayList<>();
                 ids.add(i);
                 bciPool.put(pos, ids);
             } else {
+                if(tmp!=null) {
+                    try {
+                        tmp.write("Added to map elem: "+csnode+"\n");
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
                 bciPool.get(pos).add(i);
             }
         }
         List<Integer> trash = new ArrayList<>();
-        for (NodeSourcePosition pos : bciPool.getKeys()) {
+        for (Integer pos : bciPool.getKeys()) {
             List<Integer> ids = bciPool.get(pos);
+            if(tmp!=null) {
+                try {
+                    tmp.write(pos+"->"+ids+"\n");
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
             while (ids.size() > 1) {
+                if(tmp!=null) {
+                    try {
+                        tmp.write("entered elimination"+"\n");
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
                 Integer index0 = ids.get(0);
                 Integer index1 = ids.get(1);
                 ControlSplitNode n0 = (ControlSplitNode) fsplits.get(index0).getBlock().getEndNode();
                 ControlSplitNode n1 = (ControlSplitNode) fsplits.get(index1).getBlock().getEndNode();
                 ControlSplitNode cs = __chooseRelevantConditionalNode(n0, n1);
                 if (cs.equals(n0)) {
-                    ids.remove(index1);
+                    ids.remove(1);
                     trash.add(index1);
                 } else {
-                    ids.remove(index0);
+                    ids.remove(0);
                     trash.add(index0);
                 }
             }
         }
         trash.sort(Collections.reverseOrder());  // sort list in reverse order cause of the index deletion
+        if(tmp!=null) {
+            try {
+                tmp.write("trash: "+trash);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
         for (Integer id : trash) {
             fsplits.remove((int) id);
+        }
+        if(tmp!=null){
+            try {
+                tmp.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
