@@ -48,7 +48,6 @@ import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
-import org.graalvm.compiler.graph.NodeSourcePosition;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
@@ -58,6 +57,7 @@ import org.graalvm.compiler.nodes.calc.UnaryNode;
 import org.graalvm.compiler.nodes.cfg.Block;
 import org.graalvm.compiler.nodes.cfg.ControlFlowGraph;
 import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
+import org.graalvm.compiler.nodes.extended.SwitchNode;
 import org.graalvm.compiler.nodes.java.*;
 import org.graalvm.compiler.nodes.memory.MemoryAccess;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
@@ -69,6 +69,7 @@ import org.graalvm.compiler.phases.graph.ReentrantBlockIterator;
 import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
 import org.graalvm.compiler.replacements.nodes.*;
+import org.graalvm.compiler.replacements.nodes.arithmetic.IntegerExactArithmeticSplitNode;
 
 /***
  * In order to estimate the probabilities for each of the control splits branches in the Graal's IR graph, first of all, we need to parse important features of each of them.
@@ -96,11 +97,24 @@ class ControlSplit {
         for (int i = 0; i < block.getSuccessorCount(); i++) {
             AbstractBeginNode sonHead = block.getSuccessors()[i].getBeginNode();
             this.sonsHeads.add(sonHead);
-            this.sonsKeys.put(sonHead, i); // Assume ordered 1, 2, ..., n
-            if (block.getEndNode() instanceof IfNode) {
-                IfNode cs = (IfNode) block.getEndNode();
-                assert cs.trueSuccessor() != null && cs.falseSuccessor() != null : "ParseImportantFeaturesPhaseError: no true/false successor of if.";
-                assert sonHead.equals(i == 0 ? cs.trueSuccessor() : cs.falseSuccessor()) : "Error: if primary successor doesnt have code 0!";
+        }
+        if (block.getEndNode() instanceof IfNode) {
+            IfNode cs = (IfNode) block.getEndNode();
+            this.sonsKeys.put(cs.trueSuccessor(), 0);
+            this.sonsKeys.put(cs.falseSuccessor(), 1);
+        } else if (block.getEndNode() instanceof InvokeWithExceptionNode) {
+            InvokeWithExceptionNode cs = (InvokeWithExceptionNode) block.getEndNode();
+            this.sonsKeys.put(cs.getPrimarySuccessor(), 0);
+            this.sonsKeys.put(cs.exceptionEdge(), 1);
+        } else if (block.getEndNode() instanceof IntegerExactArithmeticSplitNode) {
+            IntegerExactArithmeticSplitNode cs = (IntegerExactArithmeticSplitNode) block.getEndNode();
+            this.sonsKeys.put(cs.getPrimarySuccessor(), 0);
+            this.sonsKeys.put(cs.getOverflowSuccessor(), 1);
+        } else {
+            assert block.getEndNode() instanceof SwitchNode : "ParseImportantFeaturesError: unknown control split.";
+            for (int i = 0; i < block.getSuccessorCount(); i++) {
+                AbstractBeginNode sonHead = block.getSuccessors()[i].getBeginNode();
+                this.sonsKeys.put(sonHead, i); // Assume ordered 1, 2, ..., n
             }
         }
         this.tailHeads = EconomicSet.create(Equivalence.DEFAULT);
@@ -584,48 +598,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static void flushToDb(List<ControlSplit> fsplits, StructuredGraph graph, StructuredGraph.ScheduleResult schedule) {
-        if(graph.method().getName().equals("copyAlignedObject")) {
-            try {
-                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectFULL.gt");
-                tmp.write("NODES: \n");
-                for (Node n : graph.getNodes()) {
-                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
-                    if(n instanceof IfNode){
-                        AbstractBeginNode t = ((IfNode)n).trueSuccessor();
-                        AbstractBeginNode f = ((IfNode)n).falseSuccessor();
-                        tmp.write(" trueSuccBCI: "+(t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
-                        tmp.write(" falseSuccBCI: "+(f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
-                    }
-                    tmp.write("\n");
-                }
-                tmp.write("FSPLITS: \n");
-                for(ControlSplit cs : fsplits){
-                    tmp.write("head: "+cs.getBlock().getEndNode()+"head BCI: "+cs.getBlock().getEndNode().getNodeSourcePosition().getBCI()+"NSP: "+cs.getBlock().getEndNode().getNodeSourcePosition().toString()+"RM: "+cs.getBlock().getEndNode().getNodeSourcePosition().getRootMethod()+"\n");
-                }
-                tmp.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        if(graph.method().getName().equals("copyAlignedObject")) {
-            try {
-                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectBEFORE.txt");
-                tmp.write("BEFORE: "+fsplits.size());
-                tmp.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-        bciFiltering(fsplits, graph.method().getName());
-        if(graph.method().getName().equals("copyAlignedObject")) {
-            try {
-                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectAFTER.txt");
-                tmp.write("AFTER: "+fsplits.size());
-                tmp.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+        bciFiltering(fsplits);
 
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
@@ -667,71 +640,23 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
      * instrument. We always choose the one with probability 0.5. Rationale is that the node that
      * was injected probably should not be instrumented.
      */
-    private static void bciFiltering(List<ControlSplit> fsplits, String name) {
-        FileWriter tmp = null;
-        if(name.equals("copyAlignedObject")){
-            try {
-                tmp = new FileWriter("/home/cugur/Desktop/ml/copyAlignedObjectDELETE.txt");
-                tmp.write("===================================================\n");
-                for(int i=0; i<fsplits.size(); i++){
-                    for(int j=0; j<fsplits.size(); j++){
-                        tmp.write(i+"-"+j+" compare node source positions: "+fsplits.get(i).getBlock().getEndNode().getNodeSourcePosition().equals(fsplits.get(j).getBlock().getEndNode().getNodeSourcePosition())+" ");
-                        tmp.write(" compare bcis positions: i: "+fsplits.get(i).getBlock().getEndNode().getNodeSourcePosition().getBCI()+", j: "+fsplits.get(j).getBlock().getEndNode().getNodeSourcePosition().getBCI()+"\n");
-                    }
-                }
-                tmp.write("===================================================\n\n");
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
+    private static void bciFiltering(List<ControlSplit> fsplits) {
         EconomicMap<Integer, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
         for (int i = 0; i < fsplits.size(); i++) {
             ControlSplitNode csnode = (ControlSplitNode) fsplits.get(i).getBlock().getEndNode();
-//            if (!(csnode instanceof IfNode)) { // Try to only use if nodes
-//                continue;
-//            }
             Integer pos = csnode.getNodeSourcePosition().getBCI();
             if (!(bciPool.containsKey(pos))) {
-                if(tmp!=null) {
-                    try {
-                        tmp.write("Create new pos: "+csnode+"\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
                 List<Integer> ids = new ArrayList<>();
                 ids.add(i);
                 bciPool.put(pos, ids);
             } else {
-                if(tmp!=null) {
-                    try {
-                        tmp.write("Added to map elem: "+csnode+"\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
                 bciPool.get(pos).add(i);
             }
         }
         List<Integer> trash = new ArrayList<>();
         for (Integer pos : bciPool.getKeys()) {
             List<Integer> ids = bciPool.get(pos);
-            if(tmp!=null) {
-                try {
-                    tmp.write(pos+"->"+ids+"\n");
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
             while (ids.size() > 1) {
-                if(tmp!=null) {
-                    try {
-                        tmp.write("entered elimination"+"\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
                 Integer index0 = ids.get(0);
                 Integer index1 = ids.get(1);
                 ControlSplitNode n0 = (ControlSplitNode) fsplits.get(index0).getBlock().getEndNode();
@@ -747,27 +672,13 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
         trash.sort(Collections.reverseOrder());  // sort list in reverse order cause of the index deletion
-        if(tmp!=null) {
-            try {
-                tmp.write("trash: "+trash);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
         for (Integer id : trash) {
             fsplits.remove((int) id);
-        }
-        if(tmp!=null){
-            try {
-                tmp.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
     private static ControlSplitNode __chooseRelevantConditionalNode(ControlSplitNode n1, ControlSplitNode n2) {
-        assert n1.getNodeSourcePosition().equals(n2.getNodeSourcePosition()) : "This method distinguishes between nodes with the same source position.";
+        // assert n1.getNodeSourcePosition().equals(n2.getNodeSourcePosition()) : "This method distinguishes between nodes with the same source position.";
         // assert n1.getNodeSourcePosition().getBCI() < 0 || !(__hasDefaultProbability(n1) && __hasDefaultProbability(n2)) : "Two nodes with the same source position that is positive should not have default probability.";
         return __hasDefaultProbability(n1) ? n1 : n2;
     }
@@ -1169,11 +1080,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Get the depth of the control split led by the head 'head'
         for (int i = 0; i < fsplits.size(); i++) {
             ControlSplit tmpcs = fsplits.get(i);
-            if (tmpcs.getBlock() == head) {
+            if (tmpcs.getBlock().equals(head)) {
                 return asplits.get(i).get("CS Depth");
             }
         }
-        assert false : "ParseImportantFeaturesError: son not found in list of all sons";
-        return -1;
+        return -1;  // JNIFunctions can break this rule (can't find a cs block)
     }
 }
