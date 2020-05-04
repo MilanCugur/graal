@@ -592,10 +592,10 @@ def _gate_function_check(groundTruthData, attributesPath, resultData, verbose=Fa
 
             for elem in csv_reader:  # Go through input .csv file (Control Splits information)
                 _id = elem['Graph Id']
-                _source = elem[' Source Function']
-                _head = elem[' head']
-                _nodeId = re.split("\|", elem[' Node Description'])[0]
-                _nodeType = re.split("\|", elem[' Node Description'])[1]
+                _source = elem['Source Function']
+                _head = elem['head']
+                _nodeId = re.split("\|", elem['Node Description'])[0]
+                _nodeType = re.split("\|", elem['Node Description'])[1]
                 if verbose:
                     print('Validating Control Split: {:17s} {:7s} {:7s} {:36s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
 

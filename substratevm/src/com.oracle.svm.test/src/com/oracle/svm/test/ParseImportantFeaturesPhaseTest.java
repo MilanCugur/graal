@@ -80,7 +80,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             BufferedReader csv = new BufferedReader(new FileReader(attributes));
             String line;
             while ((line = csv.readLine()) != null) {
-                if (line.equals("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
+                if (line.equals("Graph Id,Source Function,Node Description,Node BCI,head,CD Depth,N. CS Father Blocks,N. CS Father Fixed Nodes,N. CS Father Floating Nodes"))  // skip header line
                     continue;
                 String[] data = line.split(",(?!\\s)");
                 String SourceFunction = data[1].replaceAll("\"", "");
@@ -256,7 +256,7 @@ public class ParseImportantFeaturesPhaseTest extends GraalCompilerTest {
             BufferedReader csv = new BufferedReader(new FileReader(attributes));
             String line;
             while ((line = csv.readLine()) != null) {
-                if (line.equals("Graph Id, Source Function, Node Description, Node BCI, head, CD Depth, N. CS Father Blocks, N. CS Father Fixed Nodes, N. CS Father Floating Nodes"))  // skip header line
+                if (line.equals("Graph Id,Source Function,Node Description,Node BCI,head,CD Depth,N. CS Father Blocks,N. CS Father Fixed Nodes,N. CS Father Floating Nodes"))  // skip header line
                     continue;
                 String[] data = line.split(",(?!\\s)");
                 String SourceFunction = data[1].replaceAll("\"", "");
