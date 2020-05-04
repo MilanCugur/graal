@@ -30,8 +30,10 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import jdk.vm.ci.hotspot.HotSpotJavaType;
 import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
+import jdk.vm.ci.meta.ResolvedJavaType;
 import jdk.vm.ci.meta.Signature;
 
 import com.oracle.graal.pointsto.infrastructure.WrappedJavaMethod;
@@ -602,6 +604,41 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
+//        if (graph.method().getName().equals("toUnixMode")) {  // example
+//            System.out.println(graph.method());
+//            System.out.println(graph.method().getName());
+//            System.out.println(graph.method().getDeclaringClass());
+//            System.out.println(graph.method().getDeclaringClass().getName());
+//            System.out.println(Arrays.toString(graph.method().getParameters()));
+//            JavaType[] params = graph.method().getSignature().toParameterTypes(null);
+//            for (JavaType param : params) {
+//                System.out.println(param.getName() + "=" + param.toClassName() + "-" + param.toJavaName(true));
+//                System.out.println("Resolved Java Type: " + (param instanceof ResolvedJavaType));
+//                System.out.println("HotSpot Java Type: " + (param instanceof HotSpotJavaType));
+//            }
+//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterTypes(null)));
+//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterKinds(true)));
+//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterKinds(false)));
+//        }
+//        if (graph.method().getName().equals("initIDs")) {
+//            try {
+//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/404/example3/initIDs.gt");
+//                for (Node n : graph.getNodes()) {
+//                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
+//                    if (n instanceof IfNode) {
+//                        AbstractBeginNode t = ((IfNode) n).trueSuccessor();
+//                        AbstractBeginNode f = ((IfNode) n).falseSuccessor();
+//                        tmp.write(" trueSuccBCI: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                        tmp.write(" falseSuccBCI: " + (f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                    }
+//                    tmp.write("\n");
+//                }
+//                tmp.close();
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            }
+//        }
+
         // Print gt data
         PrintWriter writerMethods = null;
         try {
@@ -612,10 +649,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         assert writerMethods != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a results writer.";
         ResolvedJavaMethod m = graph.method();
         Signature s = m.getSignature();
-        writerMethods.printf("%d,\"%s\",%d,\"%s\",\"%s\"", graph.graphId(), m.getName(), s.getParameterCount(false), m.getDeclaringClass().toJavaName(true), s.getReturnType(null).toJavaName(true));
+        writerMethods.printf("%d,\"%s\",%d,\"%s\",\"%s\"", graph.graphId(), m.getName(), s.getParameterCount(false), m.getDeclaringClass().toClassName(), s.getReturnType(null).toClassName());
         JavaType[] params = s.toParameterTypes(null);
         for (JavaType param : params) {
-            writerMethods.printf(",\"%s\"", param.toJavaName(true));
+            writerMethods.printf(",\"%s\"", param.toClassName());
         }
         writerMethods.write("\n");
         writerMethods.close();
