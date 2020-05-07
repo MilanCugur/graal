@@ -30,10 +30,8 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import jdk.vm.ci.hotspot.HotSpotJavaType;
 import jdk.vm.ci.meta.JavaType;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
-import jdk.vm.ci.meta.ResolvedJavaType;
 import jdk.vm.ci.meta.Signature;
 
 import com.oracle.graal.pointsto.infrastructure.WrappedJavaMethod;
@@ -50,6 +48,7 @@ import org.graalvm.collections.UnmodifiableMapCursor;
 import org.graalvm.compiler.core.common.cfg.Loop;
 import org.graalvm.compiler.debug.MethodFilter;
 import org.graalvm.compiler.graph.Node;
+import org.graalvm.compiler.graph.NodeSourcePosition;
 import org.graalvm.compiler.nodeinfo.NodeCycles;
 import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.calc.BinaryNode;
@@ -604,32 +603,36 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
-//        if (graph.method().getName().equals("toUnixMode")) {  // example
-//            System.out.println(graph.method());
-//            System.out.println(graph.method().getName());
-//            System.out.println(graph.method().getDeclaringClass());
-//            System.out.println(graph.method().getDeclaringClass().getName());
-//            System.out.println(Arrays.toString(graph.method().getParameters()));
-//            JavaType[] params = graph.method().getSignature().toParameterTypes(null);
-//            for (JavaType param : params) {
-//                System.out.println(param.getName() + "=" + param.toClassName() + "-" + param.toJavaName(true));
-//                System.out.println("Resolved Java Type: " + (param instanceof ResolvedJavaType));
-//                System.out.println("HotSpot Java Type: " + (param instanceof HotSpotJavaType));
-//            }
-//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterTypes(null)));
-//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterKinds(true)));
-//            System.out.println(Arrays.toString(graph.method().getSignature().toParameterKinds(false)));
-//        }
-//        if (graph.method().getName().equals("initIDs")) {
+//        if (graph.method().getName().equals("equals") && graph.method().getDeclaringClass().toClassName().equals("java.security.Provider$ServiceKey")) {
 //            try {
-//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/404/example3/initIDs.gt");
+//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/super_valid"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()))+".gt");
 //                for (Node n : graph.getNodes()) {
 //                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
+//                    if(n instanceof ControlSplitNode){
+//                        tmp.write("\nCS NSP: "+__getCallChain(n.getNodeSourcePosition()));
+//                    }
 //                    if (n instanceof IfNode) {
 //                        AbstractBeginNode t = ((IfNode) n).trueSuccessor();
 //                        AbstractBeginNode f = ((IfNode) n).falseSuccessor();
 //                        tmp.write(" trueSuccBCI: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
 //                        tmp.write(" falseSuccBCI: " + (f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                    } else if (n instanceof InvokeWithExceptionNode) {
+//                        InvokeWithExceptionNode cs = (InvokeWithExceptionNode) n;
+//                        AbstractBeginNode t = cs.getPrimarySuccessor();
+//                        AbstractBeginNode f = cs.exceptionEdge();
+//                        tmp.write(" primSuccBCI: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                        tmp.write(" excEdgeBCI: " + (f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                    } else if (n instanceof IntegerExactArithmeticSplitNode) {
+//                        IntegerExactArithmeticSplitNode cs = (IntegerExactArithmeticSplitNode) n;
+//                        AbstractBeginNode t = cs.getPrimarySuccessor();
+//                        AbstractBeginNode f = cs.getOverflowSuccessor();
+//                        tmp.write(" primSuccBCI: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                        tmp.write(" overflSuccBCI: " + (f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                    } else if (n instanceof SwitchNode) {
+//                        SwitchNode cs = (SwitchNode) n;
+//                        for (Node t : cs.successors()) {
+//                            tmp.write(" succ: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                        }
 //                    }
 //                    tmp.write("\n");
 //                }
@@ -678,10 +681,10 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
      * was injected probably should not be instrumented.
      */
     private static void bciFiltering(List<ControlSplit> fsplits) {
-        EconomicMap<Integer, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
+        EconomicMap<NodeSourcePosition, List<Integer>> bciPool = EconomicMap.create(Equivalence.DEFAULT);
         for (int i = 0; i < fsplits.size(); i++) {
             ControlSplitNode csnode = (ControlSplitNode) fsplits.get(i).getBlock().getEndNode();
-            Integer pos = csnode.getNodeSourcePosition().getBCI();
+            NodeSourcePosition pos = csnode.getNodeSourcePosition();
             if (!(bciPool.containsKey(pos))) {
                 List<Integer> ids = new ArrayList<>();
                 ids.add(i);
@@ -691,7 +694,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
         List<Integer> trash = new ArrayList<>();
-        for (Integer pos : bciPool.getKeys()) {
+        for (NodeSourcePosition pos : bciPool.getKeys()) {
             List<Integer> ids = bciPool.get(pos);
             while (ids.size() > 1) {
                 Integer index0 = ids.get(0);
@@ -715,7 +718,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
     }
 
     private static ControlSplitNode __chooseRelevantConditionalNode(ControlSplitNode n1, ControlSplitNode n2) {
-        // assert n1.getNodeSourcePosition().equals(n2.getNodeSourcePosition()) : "This method distinguishes between nodes with the same source position.";
+        assert n1.getNodeSourcePosition().equals(n2.getNodeSourcePosition()) : "This method distinguishes between nodes with the same source position.";
         // assert n1.getNodeSourcePosition().getBCI() < 0 || !(__hasDefaultProbability(n1) && __hasDefaultProbability(n2)) : "Two nodes with the same source position that is positive should not have default probability.";
         return __hasDefaultProbability(n1) ? n1 : n2;
     }
@@ -816,6 +819,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         String name = graph.method().getName();
         String csDescription = head.getEndNode().toString();
         int csBCI = head.getEndNode().getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();
+        //String csCALL = __getCallChain(head.getEndNode().getNodeSourcePosition());
 
         writerAttr.printf("%d,\"%s\",%s,%d,%s,%d,%d,%d,%d", graphId, name, csDescription, csBCI, head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
         while (sons.advance()) {
@@ -850,6 +854,35 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             }
         }
         writerAttr.printf("%n");
+    }
+
+    private static String __getCallChain(NodeSourcePosition csNsp){
+        StringBuilder sb = new StringBuilder(100);
+        if(csNsp==null){
+            return "{null}";
+        }
+        NodeSourcePosition cur = csNsp;
+        while (cur != null) {
+            ResolvedJavaMethod curMethod = cur.getMethod();
+            int csBCI = cur.getBCI();
+            sb.append("{"+__toSign(curMethod)+":"+csBCI+"}");
+            cur = cur.getCaller();
+        }
+        return sb.toString();
+    }
+
+    private static String __toSign(ResolvedJavaMethod m){
+        StringBuilder sb = new StringBuilder(100);
+        Signature s = m.getSignature();
+        sb.append("\""+m.getName()+"\".");
+        sb.append(s.getParameterCount(false)+".");
+        sb.append("\""+m.getDeclaringClass().toClassName()+"\".");
+        sb.append("\""+s.getReturnType(null).toClassName()+"\"");
+        JavaType[] params = s.toParameterTypes(null);
+        for (JavaType param : params) {
+            sb.append(".\""+param.toClassName()+"\"");
+        }
+        return sb.toString();
     }
 
     private static EconomicMap<String, Integer> __getData(List<Block> path, List<ControlSplit> fsplits, List<EconomicMap<String, Integer>> asplits, StructuredGraph.ScheduleResult schedule) {

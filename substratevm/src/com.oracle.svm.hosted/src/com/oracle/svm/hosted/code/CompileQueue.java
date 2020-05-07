@@ -24,8 +24,12 @@
  */
 package com.oracle.svm.hosted.code;
 
+import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Modifier;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -66,21 +70,10 @@ import org.graalvm.compiler.lir.asm.DataBuilder;
 import org.graalvm.compiler.lir.asm.FrameContext;
 import org.graalvm.compiler.lir.framemap.FrameMap;
 import org.graalvm.compiler.lir.phases.LIRSuites;
-import org.graalvm.compiler.nodes.CallTargetNode;
-import org.graalvm.compiler.nodes.ConstantNode;
-import org.graalvm.compiler.nodes.FixedNode;
-import org.graalvm.compiler.nodes.FixedWithNextNode;
-import org.graalvm.compiler.nodes.FrameState;
-import org.graalvm.compiler.nodes.IndirectCallTargetNode;
-import org.graalvm.compiler.nodes.Invoke;
-import org.graalvm.compiler.nodes.InvokeNode;
-import org.graalvm.compiler.nodes.ParameterNode;
-import org.graalvm.compiler.nodes.StartNode;
-import org.graalvm.compiler.nodes.StateSplit;
-import org.graalvm.compiler.nodes.StructuredGraph;
+import org.graalvm.compiler.nodes.*;
 import org.graalvm.compiler.nodes.StructuredGraph.GuardsStage;
-import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.extended.ForeignCallNode;
+import org.graalvm.compiler.nodes.extended.SwitchNode;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration.BytecodeExceptionMode;
 import org.graalvm.compiler.nodes.graphbuilderconf.InvocationPlugin;
@@ -98,6 +91,7 @@ import org.graalvm.compiler.phases.tiers.MidTierContext;
 import org.graalvm.compiler.phases.tiers.Suites;
 import org.graalvm.compiler.phases.util.GraphOrder;
 import org.graalvm.compiler.phases.util.Providers;
+import org.graalvm.compiler.replacements.nodes.arithmetic.IntegerExactArithmeticSplitNode;
 import org.graalvm.compiler.virtual.phases.ea.EarlyReadEliminationPhase;
 import org.graalvm.compiler.virtual.phases.ea.PartialEscapePhase;
 import org.graalvm.nativeimage.ImageSingletons;
@@ -257,6 +251,47 @@ public class CompileQueue {
             if (method.compilationInfo.graph != null) {
                 method.compilationInfo.graph.resetDebug(debug);
             }
+//            if(method.compilationInfo.graph != null && method.getName().equals("scrub")){
+//                try {
+//                    FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/scrub_ParsedNodes_"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()))+".gt");
+//                    tmp.write("Method: "+method.getName()+"\n");
+//                    tmp.write("Class: "+method.getDeclaringClass().toClassName()+"\n");
+//                    tmp.write("BCIs Snapshoot After Parsing: ");
+//                    for (Node n : method.compilationInfo.graph.getNodes()) {
+//                        tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
+//                        if(n instanceof IfNode){
+//                            IfNode cs = (IfNode)n;
+//                            AbstractBeginNode t = cs.trueSuccessor();
+//                            AbstractBeginNode f = cs.falseSuccessor();
+//                            tmp.write(" trueSuccBCI: "+(t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                            tmp.write(" falseSuccBCI: "+(f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                        } else if (n instanceof InvokeWithExceptionNode) {
+//                            InvokeWithExceptionNode cs = (InvokeWithExceptionNode) n;
+//                            AbstractBeginNode t = cs.getPrimarySuccessor();
+//                            AbstractBeginNode f = cs.exceptionEdge();
+//                            tmp.write(" primSuccBCI: "+(t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                            tmp.write(" excEdgeBCI: "+(f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                        } else if (n instanceof IntegerExactArithmeticSplitNode) {
+//                            IntegerExactArithmeticSplitNode cs = (IntegerExactArithmeticSplitNode) n;
+//                            AbstractBeginNode t = cs.getPrimarySuccessor();
+//                            AbstractBeginNode f = cs.getOverflowSuccessor();
+//                            tmp.write(" primSuccBCI: "+(t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                            tmp.write(" overflSuccBCI: "+(f.getNodeSourcePosition() != null ? f.getNodeSourcePosition().getBCI() : -9999));
+//                        } else if (n instanceof SwitchNode){
+//                            SwitchNode cs = (SwitchNode)n;
+//                            for (Node t : cs.successors()) {
+//                                tmp.write(" succ: " + (t.getNodeSourcePosition() != null ? t.getNodeSourcePosition().getBCI() : -9999));
+//                            }
+//                        } else{
+//                            tmp.write("--");
+//                        }
+//                        tmp.write("\n");
+//                    }
+//                    tmp.close();
+//                } catch (IOException e) {
+//                    e.printStackTrace();
+//                }
+//            }
             result = doCompile(debug, method, compilationIdentifier, reason);
         }
 
