@@ -24,23 +24,15 @@
  */
 package com.oracle.svm.hosted.phases;
 
-import java.io.*;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.stream.Collectors;
-
-import jdk.vm.ci.meta.JavaType;
-import jdk.vm.ci.meta.ResolvedJavaMethod;
-import jdk.vm.ci.meta.Signature;
-
 import com.oracle.graal.pointsto.infrastructure.WrappedJavaMethod;
 import com.oracle.graal.pointsto.meta.AnalysisMethod;
 import com.oracle.graal.pointsto.meta.AnalysisType;
-import com.oracle.svm.hosted.meta.HostedType;
 import com.oracle.svm.core.graal.nodes.ThrowBytecodeExceptionNode;
 import com.oracle.svm.hosted.meta.HostedMethod;
-
+import com.oracle.svm.hosted.meta.HostedType;
+import jdk.vm.ci.meta.JavaType;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
+import jdk.vm.ci.meta.Signature;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Equivalence;
@@ -71,6 +63,18 @@ import org.graalvm.compiler.phases.schedule.SchedulePhase;
 import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
 import org.graalvm.compiler.replacements.nodes.*;
 import org.graalvm.compiler.replacements.nodes.arithmetic.IntegerExactArithmeticSplitNode;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Stack;
+import java.util.stream.Collectors;
 
 /***
  * In order to estimate the probabilities for each of the control splits branches in the Graal's IR graph, first of all, we need to parse important features of each of them.
@@ -605,11 +609,12 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
 //        if (graph.method().getName().equals("equals") && graph.method().getDeclaringClass().toClassName().equals("java.security.Provider$ServiceKey")) {
 //            try {
-//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/super_valid"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()))+".gt");
+//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/super_valid" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis())) + ".gt");
 //                for (Node n : graph.getNodes()) {
 //                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
-//                    if(n instanceof ControlSplitNode){
-//                        tmp.write("\nCS NSP: "+__getCallChain(n.getNodeSourcePosition()));
+//                    tmp.write("CALL chain: " + (n.getNodeSourcePosition() != null ? __getCallChain(n.getNodeSourcePosition()) : "null"));
+//                    if (n instanceof ControlSplitNode) {
+//                        tmp.write("\nCS NSP: " + __getCallChain(n.getNodeSourcePosition()));
 //                    }
 //                    if (n instanceof IfNode) {
 //                        AbstractBeginNode t = ((IfNode) n).trueSuccessor();
@@ -668,7 +673,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
             e.printStackTrace();
         }
         assert writerAttr != null : "ParseImportantFeaturesPhaseError: Cannot instantiate a result writer.";
-        writerAttr.printf("Graph Id,Source Function,Node Description,Node BCI,head,CD Depth,N. CS Father Blocks,N. CS Father Fixed Nodes,N. CS Father Floating Nodes%n");
+        writerAttr.printf("Graph Id,Source Function,Node Description,Node BCI,Node CALL,head,CD Depth,N. CS Father Blocks,N. CS Father Fixed Nodes,N. CS Father Floating Nodes%n");
         for (int i = 0; i < fsplits.size(); i++) {
             flushToDbUtil(i, fsplits, asplits, writerAttr, graph, schedule);
         }
@@ -723,7 +728,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         return __hasDefaultProbability(n1) ? n1 : n2;
     }
 
-    public static boolean __hasDefaultProbability(ControlSplitNode n1) {
+    private static boolean __hasDefaultProbability(ControlSplitNode n1) {
         double defaultProbability = 1.0 / n1.successors().count();
         for (Node s : n1.successors().snapshot()) {
             if (Double.compare(n1.probability((AbstractBeginNode) s), defaultProbability) != 0) {
@@ -819,9 +824,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         String name = graph.method().getName();
         String csDescription = head.getEndNode().toString();
         int csBCI = head.getEndNode().getNodeSourcePosition() == null ? -9999 : head.getEndNode().getNodeSourcePosition().getBCI();
-        //String csCALL = __getCallChain(head.getEndNode().getNodeSourcePosition());
+        String csCALL = __getCallChain(head.getEndNode().getNodeSourcePosition());
 
-        writerAttr.printf("%d,\"%s\",%s,%d,%s,%d,%d,%d,%d", graphId, name, csDescription, csBCI, head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
+        writerAttr.printf("%d,\"%s\",%s,%d,\"%s\",%s,%d,%d,%d,%d", graphId, name, csDescription, csBCI, csCALL, head, csdepth, csfblocks, csfnodesfix, csfnodesfloat);
         while (sons.advance()) {
             AbstractBeginNode sonHead = sons.getKey();
             int sonBCI = sonHead.getNodeSourcePosition() == null ? -9999 : sonHead.getNodeSourcePosition().getBCI();
@@ -856,31 +861,29 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         writerAttr.printf("%n");
     }
 
-    private static String __getCallChain(NodeSourcePosition csNsp){
-        StringBuilder sb = new StringBuilder(100);
-        if(csNsp==null){
-            return "{null}";
-        }
+    private static String __getCallChain(NodeSourcePosition csNsp) {
+        assert csNsp != null : "ParseImportantFeaturesPhaseError: Control Split Node with unknown NodeSourcePosition.";
+        StringBuilder sb = new StringBuilder();
         NodeSourcePosition cur = csNsp;
         while (cur != null) {
             ResolvedJavaMethod curMethod = cur.getMethod();
             int csBCI = cur.getBCI();
-            sb.append("{"+__toSign(curMethod)+":"+csBCI+"}");
+            sb.append("{").append(__toSign(curMethod)).append(":").append(csBCI).append("}");
             cur = cur.getCaller();
         }
         return sb.toString();
     }
 
-    private static String __toSign(ResolvedJavaMethod m){
-        StringBuilder sb = new StringBuilder(100);
+    private static String __toSign(ResolvedJavaMethod m) {
+        StringBuilder sb = new StringBuilder();
         Signature s = m.getSignature();
-        sb.append("\""+m.getName()+"\".");
-        sb.append(s.getParameterCount(false)+".");
-        sb.append("\""+m.getDeclaringClass().toClassName()+"\".");
-        sb.append("\""+s.getReturnType(null).toClassName()+"\"");
+        sb.append("'").append(m.getName()).append("'.");  // method name
+        sb.append(s.getParameterCount(false)).append(".");  // parameter count
+        sb.append("'").append(m.getDeclaringClass().toClassName()).append("'.");  // declaring class
+        sb.append("'").append(s.getReturnType(null).toClassName()).append("'");  // return type
         JavaType[] params = s.toParameterTypes(null);
         for (JavaType param : params) {
-            sb.append(".\""+param.toClassName()+"\"");
+            sb.append(".'").append(param.toClassName()).append("'");  // types of arguments
         }
         return sb.toString();
     }
