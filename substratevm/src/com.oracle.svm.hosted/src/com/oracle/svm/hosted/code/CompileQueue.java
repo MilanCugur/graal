@@ -251,11 +251,12 @@ public class CompileQueue {
             if (method.compilationInfo.graph != null) {
                 method.compilationInfo.graph.resetDebug(debug);
             }
-//            if(method.compilationInfo.graph != null && method.getName().equals("scrub")){
+//            if(method.compilationInfo.graph != null && method.getName().equals("poll") && method.getDeclaringClass().toClassName().equals("java.lang.ref.ReferenceQueue") && method.getSignature().getParameterCount(false)==0){
 //                try {
-//                    FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/scrub_ParsedNodes_"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()))+".gt");
+//                    FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/poll_ParsedNodes_"+new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()))+".gt");
 //                    tmp.write("Method: "+method.getName()+"\n");
 //                    tmp.write("Class: "+method.getDeclaringClass().toClassName()+"\n");
+//                    tmp.write("Signature: "+method.getSignature().toString()+"\n");
 //                    tmp.write("BCIs Snapshoot After Parsing: ");
 //                    for (Node n : method.compilationInfo.graph.getNodes()) {
 //                        tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));

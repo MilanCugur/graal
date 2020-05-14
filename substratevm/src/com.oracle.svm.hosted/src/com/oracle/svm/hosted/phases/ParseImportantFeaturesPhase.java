@@ -64,10 +64,7 @@ import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
 import org.graalvm.compiler.replacements.nodes.*;
 import org.graalvm.compiler.replacements.nodes.arithmetic.IntegerExactArithmeticSplitNode;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -607,9 +604,9 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
         List<EconomicMap<String, Integer>> asplits = appendAncestorsAttributesUtil(fsplits, schedule);
 
-//        if (graph.method().getName().equals("equals") && graph.method().getDeclaringClass().toClassName().equals("java.security.Provider$ServiceKey")) {
+//        if(graph.method().getName().equals("poll") && graph.method().getDeclaringClass().toClassName().equals("java.lang.ref.ReferenceQueue") && graph.method().getSignature().getParameterCount(false)==0){
 //            try {
-//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/super_valid" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis())) + ".gt");
+//                FileWriter tmp = new FileWriter("/home/cugur/Desktop/ml/poll_ParsedNodes_PIFPhase" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis())) + ".gt");
 //                for (Node n : graph.getNodes()) {
 //                    tmp.write(n.toString() + " Id:" + n.getId() + " BCI:" + (n.getNodeSourcePosition() != null ? n.getNodeSourcePosition().getBCI() : -9999));
 //                    tmp.write("CALL chain: " + (n.getNodeSourcePosition() != null ? __getCallChain(n.getNodeSourcePosition()) : "null"));
