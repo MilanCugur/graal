@@ -40,6 +40,9 @@ import shutil
 import sys
 import hashlib
 import io
+import csv
+import json
+import datetime
 
 import mx_truffle
 import mx_sdk_vm
@@ -463,6 +466,7 @@ class GraalTags:
     benchmarktest = ['benchmarktest', 'fulltest']
     ctw = ['ctw', 'fulltest']
     doc = ['javadoc']
+    features = ['features']   # newly added for ParseImportantFeaturesPhase testing
 
 def _remove_empty_entries(a):
     """Removes empty entries. Return value is always a list."""
@@ -536,7 +540,99 @@ def jvmci_ci_version_gate_runner(tasks):
     with Task('JVMCI_CI_VersionSyncCheck', tasks, tags=[mx_gate.Tags.style]) as t:
         if t: verify_jvmci_ci_versions([])
 
-def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVMarguments=None):
+def _gate_function_check(groundTruthData, attributesPath, resultData, verbose=False):
+    """
+    Compare groundTruthData with the parsedData.
+    Return True/False as general test results. Detailed information is written to resultData.
+    """
+    assert groundTruthData.endswith(".json")  # Check file extensions
+    assert os.path.isdir(attributesPath)
+    assert resultData.endswith(".csv")
+
+    check_source = None  # Ground truth source function
+    check_data = {}      # Ground truth data: (check_source, head, nodeId, nodeType) -> sons
+
+    with open(groundTruthData) as f:
+        funcdata = json.load(f)  # list of functions ground truth ("source" and "control splits" fields)
+        if isinstance(funcdata, dict):  # fix only one func; cause of json.load
+            funcdata = [funcdata]
+        for data in funcdata:
+            check_source = data['source']  # Source Function name
+            if verbose:
+                print('Validating function {}.'.format(check_source))
+            for cs in data['control splits']: # Go through its Control Splits
+                node = cs['node']
+                node = re.split("\|", node)
+                assert len(node)==2
+                nodeId = node[0]
+                nodeType = node[1]
+                head = cs['head']
+                sons = set()
+                sonsPattern = re.compile("^\s+|\s*,\s*|\s+$")
+                for son in cs['sons']:  # For every Control Split branching paths add it to the sons set
+                    tmp = son.split('--')
+                    if len(tmp)!=2:
+                        mx.log_error("File {} corrupted (branch tail information not provided).".format(groundTruthData))
+                    son, tail = tmp[0], tmp[1]
+                    sons.add((frozenset(sonsPattern.split(son)), frozenset(sonsPattern.split(tail))))   # (son_blocks, pinned_tail_blocks)
+                check_data[(check_source, head, nodeId, nodeType)]=sons
+    print('Control Splits to be validated: ')
+    for elem in check_data:
+        print(elem)
+
+    valid = True  # Assume that source functions Control Splits are valid parsed
+    csv_write = open(resultData, mode='w')
+    csv_writer = csv.DictWriter(csv_write, fieldnames=['Graph Id', 'Source Function', 'Node Description', 'Node Id', 'head', 'Valid Control Split'])
+    csv_writer.writeheader()
+    for parsedData in os.listdir(attributesPath):
+        if not parsedData.endswith(".csv"):
+            continue  # .gt files
+        with open(os.path.join(attributesPath, parsedData), mode='r') as csv_read:
+            csv_reader = csv.DictReader(csv_read)
+
+            for elem in csv_reader:  # Go through input .csv file (Control Splits information)
+                _id = elem['Graph Id']
+                _source = elem['Source Function']
+                _head = elem['head']
+                _nodeId = re.split("\|", elem['Node Description'])[0]
+                _nodeType = re.split("\|", elem['Node Description'])[1]
+                if verbose:
+                    print('Validating Control Split: {:17s} {:7s} {:7s} {:36s}:'.format(_source, _id, _head, str(nodeId)+"|"+_nodeType), end='')
+
+                orign = None
+                if (_source, _head, _nodeId, _nodeType) in check_data:
+                    orign = check_data[(_source, _head, _nodeId, _nodeType)]  # Ground truth data for current Control Split
+                else:
+                    mx.log_error('\nParse Important Features Phase gate check error: Control Split {} not matched with the ground truth {} file.'.format((_source, _head, _nodeId, _nodeType), groundTruthData))
+                    return False
+
+                csValid = True # Assume that current Control Split blocks are valid parsed
+                for cs in elem[None]:
+                    tmp = cs.split(";")[0].split('][')
+                    if len(tmp)!=2:
+                        mx.log_error("File {} corrupted (branch tail information not provided).".format(parsedData))
+                    son, tail = tmp[0].split(":")[0], tmp[1]
+                    son = frozenset(map(lambda x: x.strip(), son.replace('[','').replace(']', '').split(",")))  # Appropriate son's blocks
+                    tail = frozenset(map(lambda x: x.strip(), tail.replace('[','').replace(']', '').split(",")))  # Appropriate tail blocks
+                    branchValid = (son, tail) in orign  # Compare branch data: (branch_blocks, pinned_tail_blocks)
+                    if not branchValid:
+                        csValid = False
+                csv_writer.writerow({'Graph Id':_id, 'Source Function':_source, 'Node Description':str(nodeId)+"|"+_nodeType, 'Node Id':_nodeId, 'head':_head, 'Valid Control Split':csValid})
+                if not csValid:
+                    valid = False
+                if verbose:
+                    print(csValid)
+
+            if valid:
+                csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'True'})
+            else:
+                csv_writer.writerow({'Graph Id':'Summary:', 'Source Function':'False'})
+    csv_write.close()
+
+    return valid
+
+
+def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVMarguments=None, features_dir=None):
     if jdk.javaCompliance >= '9':
         with Task('JDK_java_base_test', tasks, tags=['javabasetest']) as t:
             if t: java_base_unittest(_remove_empty_entries(extraVMarguments) + [])
@@ -590,6 +686,72 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
         # metadata package was deprecated, exclude it
         if t: mx.javadoc(['--exclude-packages', 'com.oracle.truffle.dsl.processor.java'], quietForNoPackages=True)
 
+    # ParseImportantFeaturesPhase tests
+    with Task('ParseImportantFeaturesPhase', tasks, tags=GraalTags.features) as t:
+        if t:
+            mx.log("Starting of testing Parsing Important Features Phase.")
+            mx.warn("Ensure you have correct version of \"native-image\" tool built.")
+            os.chdir(features_dir)
+            resultDir = 'FeaturesTesting_{}.csv'.format(str(datetime.datetime.now()).replace(' ', '_'))
+            r = open(resultDir, 'w')
+            csv_writer = csv.DictWriter(r, fieldnames=['Test', 'Result', 'Timestamp'])
+            csv_writer.writeheader()
+
+            if os.path.isdir(features_dir):
+                for root, dirs, files in os.walk(features_dir):
+                    candidates = map(lambda x: x.split('.')[0], filter(lambda x: x.endswith('.java'), files))
+                    filenames = [candidate for candidate in candidates if candidate+'.json' in files]
+                    if len(filenames)>1:  # can be empty subfolders
+                        mx.log_error('In passed file {} founded multiple .java source with ground truth .jason file.'.format(features_dir))
+                    elif len(filenames)==0:
+                        continue
+                    else:
+                        mx.log("Changing the working directory.")
+                        os.chdir(root)
+                        mx.log("Directory succesfully changed to {}.".format(root))
+
+                        filename = filenames[0]
+                        print('Testing file {}.java..'.format(filename))
+                        if 'README.md' in files:
+                            with open('./README.md', 'r') as r:
+                                mx.log(r.read().strip())
+                        funcnames = None  # Parse target function names from .jason ground truth file
+                        with open(filename+'.json', 'r') as f:
+                            css = json.load(f)
+                            if isinstance(css, dict):  # case of only one function in a file; cause of json.load
+                                css = [css]
+                            funcnames = [str(cs['source']) for cs in css]
+                        print('Testing functions: {}..'.format(str(funcnames)))
+                        mx.log('Compiling {}.java to bytecode.'.format(filename))
+                        mx.run(['javac', filename+'.java'])
+
+                        mx.log('Running native-image tool: '+' '.join(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:+ParseImportantFeatures', '-H:MethodFilter='+','.join(funcnames)]))
+                        mx.run(['native-image', filename, '-H:+TrackNodeSourcePosition', '-H:+ParseImportantFeatures', '-H:MethodFilter='+','.join(funcnames)])
+
+                        # find newest attributes folder
+                        files = os.listdir(".")
+                        paths = [os.path.join(root, basename) for basename in files]
+                        paths = filter(lambda x: os.path.isdir(x) and "importantAttributes" in x.split(os.path.sep)[-1], paths)
+                        attributes = max(paths, key=os.path.getctime)
+                        if attributes is None:
+                            mx.log_error("Parse Important Features Test Failed: cannot find attributes data.")
+
+                        mx.log('Compare generated results with the ground truth..')
+                        if _gate_function_check(filename+'.json', attributes, 'importantResults_'+filename+'.csv', True):
+                            print(mx.colorize(msg="Succesfully passed Parse Important Features Tests.", color='green'), file=sys.stdout)  # use mx.log to be less loud
+                            csv_writer.writerow({'Test':filename, 'Result':'True', 'Timestamp':str(datetime.datetime.now())})
+                        else:
+                            mx.log_error("Parse Important Features Tests Failed.\n")
+                            csv_writer.writerow({'Test':filename, 'Result':'False', 'Timestamp':str(datetime.datetime.now())})
+                        mx.log(msg="Detailed information can be found at \"{}/importantResults_{}.csv\".".format(os.path.abspath("."), filename))
+
+                        mx.log('Cleaning the current directory.')
+                        mx.run(['rm', '-rf', filename+'.class', filename, 'graal_dumps'])
+                        subprocess.Popen(['rm -rf *~'], shell='True')  # remove emacs backup file, use subprocess cause of regex
+            else:
+                mx.log_error('Passed directory "--features_dir {}" not valid.'.format(features_dir))
+            r.close()
+            mx.log('Parse Important Features Tests: Results are written to {}.'.format(os.path.join(features_dir, resultDir)))
 
 def compiler_gate_benchmark_runner(tasks, extraVMarguments=None, prefix=''):
     # run selected DaCapo benchmarks
@@ -723,7 +885,7 @@ def _is_jaotc_supported():
     return exists(jdk.exe_path('jaotc'))
 
 def _graal_gate_runner(args, tasks):
-    compiler_gate_runner(['compiler', 'truffle'], graal_unit_test_runs, graal_bootstrap_tests, tasks, args.extra_vm_argument)
+    compiler_gate_runner(['compiler', 'truffle'], graal_unit_test_runs, graal_bootstrap_tests, tasks, args.extra_vm_argument, args.features_dir)
     compiler_gate_benchmark_runner(tasks, args.extra_vm_argument)
     jvmci_ci_version_gate_runner(tasks)
     if _is_jaotc_supported():
