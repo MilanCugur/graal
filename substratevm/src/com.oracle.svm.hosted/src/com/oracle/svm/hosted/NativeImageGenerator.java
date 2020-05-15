@@ -54,6 +54,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import com.oracle.svm.hosted.phases.*;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Pair;
 import org.graalvm.compiler.api.replacements.Fold;
@@ -252,14 +253,6 @@ import com.oracle.svm.hosted.meta.HostedType;
 import com.oracle.svm.hosted.meta.HostedUniverse;
 import com.oracle.svm.hosted.meta.UniverseBuilder;
 import com.oracle.svm.hosted.option.HostedOptionProvider;
-import com.oracle.svm.hosted.phases.CInterfaceInvocationPlugin;
-import com.oracle.svm.hosted.phases.ConstantFoldLoadFieldPlugin;
-import com.oracle.svm.hosted.phases.EarlyConstantFoldLoadFieldPlugin;
-import com.oracle.svm.hosted.phases.InjectedAccessorsPlugin;
-import com.oracle.svm.hosted.phases.IntrinsifyMethodHandlesInvocationPlugin;
-import com.oracle.svm.hosted.phases.SubstrateClassInitializationPlugin;
-import com.oracle.svm.hosted.phases.VerifyDeoptFrameStatesLIRPhase;
-import com.oracle.svm.hosted.phases.VerifyNoGuardsPhase;
 import com.oracle.svm.hosted.snippets.SubstrateGraphBuilderPlugins;
 import com.oracle.svm.hosted.substitute.AnnotationSubstitutionProcessor;
 import com.oracle.svm.hosted.substitute.DeclarativeSubstitutionProcessor;
@@ -1252,6 +1245,11 @@ public class NativeImageGenerator {
 
         OptionValues options = hosted ? HostedOptionValues.singleton() : RuntimeOptionValues.singleton();
         Suites suites = GraalConfiguration.instance().createSuites(options, hosted);
+        /* Added "ParseImportantFeaturesPhase here - add it before the canonicalizer phase */
+        if (ParseImportantFeaturesPhase.Options.ParseImportantFeatures.getValue(options)) {
+            String methodRegex = org.graalvm.compiler.debug.DebugOptions.MethodFilter.getValue(options);  // If Method Filter is specified, parse target method name
+            suites.getHighTier().prependPhase((new ParseImportantFeaturesPhase(methodRegex)));
+        }
         return modifySuites(backend, suites, featureHandler, runtimeConfig, snippetReflection, hosted, false);
     }
 
