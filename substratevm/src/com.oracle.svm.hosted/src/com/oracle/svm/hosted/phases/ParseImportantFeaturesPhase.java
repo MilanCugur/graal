@@ -64,7 +64,12 @@ import org.graalvm.compiler.replacements.arraycopy.ArrayCopyCallNode;
 import org.graalvm.compiler.replacements.nodes.*;
 import org.graalvm.compiler.replacements.nodes.arithmetic.IntegerExactArithmeticSplitNode;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -104,8 +109,8 @@ class ControlSplit {
             IfNode cs = (IfNode) block.getEndNode();
             this.sonsKeys.put(cs.trueSuccessor(), 0);
             this.sonsKeys.put(cs.falseSuccessor(), 1);
-        } else if (block.getEndNode() instanceof InvokeWithExceptionNode) {
-            InvokeWithExceptionNode cs = (InvokeWithExceptionNode) block.getEndNode();
+        } else if (block.getEndNode() instanceof WithExceptionNode) {
+            WithExceptionNode cs = (WithExceptionNode) block.getEndNode();
             this.sonsKeys.put(cs.getPrimarySuccessor(), 0);
             this.sonsKeys.put(cs.exceptionEdge(), 1);
         } else if (block.getEndNode() instanceof IntegerExactArithmeticSplitNode) {
@@ -332,11 +337,15 @@ class TraversalState {
 public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
 
     private String methodRegex;  // Functions targeted for attribute parsing
-    private static String PATH;  // Results directory
+    private static Path PATH;  // Results directory
 
     static {
-        PATH = "importantAttributes" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis()));
-        boolean dirExist = new File(PATH).mkdir();
+        File directory = new File(System.getProperty("user.home") + "/.important_attributes");
+        if (!directory.exists()) {
+            directory.mkdir();
+        }
+        PATH = Paths.get(directory.getPath(), "database_" + new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss").format(new Timestamp(System.currentTimeMillis())));
+        boolean dirExist = new File(PATH.toUri()).mkdir();
         assert dirExist : "ParseImportantFeaturesPhaseError: Cannot create a directory.";
     }
 
@@ -647,7 +656,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Print gt data
         PrintWriter writerMethods = null;
         try {
-            writerMethods = new PrintWriter(new FileOutputStream(new File(PATH, "methodSignature_" + graph.method().getName() + "_" + graph.graphId() + ".gt")));
+            writerMethods = new PrintWriter(new FileOutputStream(new File(String.valueOf(PATH), "methodSignature_" + graph.method().getName() + "_" + graph.graphId() + ".gt")));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -665,7 +674,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
         // Print attributes
         PrintWriter writerAttr = null;
         try {
-            writerAttr = new PrintWriter(new FileOutputStream(new File(PATH, "importantAttributes_" + graph.method().getName() + "_" + graph.graphId() + ".csv")));
+            writerAttr = new PrintWriter(new FileOutputStream(new File(String.valueOf(PATH), "importantAttributes_" + graph.method().getName() + "_" + graph.graphId() + ".csv")));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -983,7 +992,7 @@ public class ParseImportantFeaturesPhase extends BasePhase<CoreProviders> {
                 }
 
                 // N. Monitor Enter
-                if (node instanceof MonitorEnterNode || node instanceof RawMonitorEnterNode) {
+                if (node instanceof MonitorEnterNode) { // (java8 cause) || node instanceof RawMonitorEnterNode) {
                     nmonenter++;
                 }
 
