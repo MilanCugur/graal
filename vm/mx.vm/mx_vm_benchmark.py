@@ -32,6 +32,7 @@ import mx_sdk_vm, mx_sdk_vm_impl
 import os
 import re
 from os.path import dirname, join
+import shutil
 
 
 _suite = mx.suite('vm')
@@ -240,12 +241,12 @@ class NativeImageVM(GraalVm):
             non_tmp_dir = os.path.abspath(config.benchmark_output_dir) if config.benchmark_output_dir else None
 
             if config.only_prepare_native_image or config.only_run_prepared_image:
-                bench_suite = mx.suite('vm-enterprise')
+                bench_suite = mx.suite('vm')
                 root_dir = mx.join(bench_suite.dir, "mxbuild")
                 output_dir_path = mx.join(os.path.abspath(root_dir), 'native-image-bench-' + executable_name + '-' + self.config_name())
                 if config.only_prepare_native_image:
                     if os.path.exists(output_dir_path):
-                        os.rmdir(output_dir_path)
+                        shutil.rmtree(output_dir_path, ignore_errors=True)  # override existing mxbuild output dirs
                     os.mkdir(output_dir_path)
                 config.output_dir = output_dir_path
             else:
