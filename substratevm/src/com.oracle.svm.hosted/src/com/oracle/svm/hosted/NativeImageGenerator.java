@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import com.oracle.svm.hosted.phases.ParseImportantFeaturesPhase;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Pair;
 import org.graalvm.compiler.api.replacements.Fold;
@@ -1261,6 +1262,11 @@ public class NativeImageGenerator {
 
         OptionValues options = hosted ? HostedOptionValues.singleton() : RuntimeOptionValues.singleton();
         Suites suites = GraalConfiguration.instance().createSuites(options, hosted);
+        /* Added "ParseImportantFeaturesPhase here - add it before the canonicalizer phase */
+        if (ParseImportantFeaturesPhase.Options.ParseImportantFeatures.getValue(options)) {
+            String methodRegex = org.graalvm.compiler.debug.DebugOptions.MethodFilter.getValue(options);  // If Method Filter is specified, parse target method name
+            suites.getHighTier().prependPhase((new ParseImportantFeaturesPhase(methodRegex)));
+        }
         return modifySuites(backend, suites, featureHandler, runtimeConfig, snippetReflection, hosted, false);
     }
 
