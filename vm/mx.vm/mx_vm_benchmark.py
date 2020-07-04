@@ -99,7 +99,7 @@ class NativeImageVM(GraalVm):
     """
 
     class BenchmarkConfig:
-        def __init__(self):
+        def __init__(self, pgo_instrumented_iterations=0):
             self.extra_image_build_arguments = []
             self.extra_run_args = []
             self.extra_agent_run_args = []
@@ -110,7 +110,7 @@ class NativeImageVM(GraalVm):
             self.config_dir = None
             self.profile_dir = None
             self.log_dir = None
-            self.pgo_iteration_num = None
+            self.pgo_iteration_num = pgo_instrumented_iterations
             self.params = ['extra-image-build-argument', 'extra-run-arg', 'extra-agent-run-arg', 'extra-profile-run-arg',
                            'extra-agent-profile-run-arg', 'benchmark-output-dir', 'stages']
             self.stages = {'agent', 'instrument-image', 'instrument-run', 'image', 'run'}
@@ -143,6 +143,11 @@ class NativeImageVM(GraalVm):
                         stages_list = trimmed_arg[len(self.params[6] + '='):].split(',')
                         self.stages = set(stages_list)
                         self.last_stage = stages_list.pop()
+                        # self.last_stage = 'instrument-run-0' problem if this is really the last one!
+                        # cannot see NativeImageVM.pgo_instrumented_iterations in BenchmarkConfig - was needed to add aditional arg to the bench config
+                        # 'instrument-run'+str(NativeImageVM.pgo_instrumented_iterations if self.pgo_iteration_num is None else int(self.pgo_iteration_num))
+                        if self.last_stage in ['instrument-run', 'instrument-image']:
+                            self.last_stage += '-'+str(self.pgo_iteration_num-1)
                         found = True
 
                     # not for end-users
@@ -366,7 +371,7 @@ class NativeImageVM(GraalVm):
             return super(NativeImageVM, self).run_java(args, out=out, err=err, cwd=cwd, nonZeroIsFatal=nonZeroIsFatal)
         else:
             # never fatal, we handle it ourselves
-            config = NativeImageVM.BenchmarkConfig()
+            config = NativeImageVM.BenchmarkConfig(self.pgo_instrumented_iterations)
             original_java_run_args = config.parse(args)
 
             executable, classpath_arguments, system_properties, image_run_args = NativeImageVM.extract_benchmark_arguments(original_java_run_args)
@@ -429,7 +434,8 @@ class NativeImageVM(GraalVm):
             if not self.hotspot_pgo:
                 # Native Image profile collection
                 i = 0
-                instrumented_iterations = self.pgo_instrumented_iterations if config.pgo_iteration_num is None else int(config.pgo_iteration_num)
+                assert config.pgo_iteration_num is not None
+                instrumented_iterations = int(config.pgo_iteration_num)  
                 while i < instrumented_iterations:
                     profile_path = profile_path_no_extension + '-' + str(i) + profile_file_extension
                     instrumentation_image_name = executable_name + '-instrument-' + str(i)
