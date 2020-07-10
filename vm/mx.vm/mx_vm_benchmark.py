@@ -414,7 +414,7 @@ class NativeImageVM(GraalVm):
                 hotspot_args = hotspot_vm_args + classpath_arguments + executable + system_properties + hotspot_run_args
                 java_command = os.path.join(mx_sdk_vm_impl.graalvm_home(fatalIfMissing=True), 'bin', 'java')
                 with stages.set_command([java_command] + hotspot_args) as s:
-                    s.execute_command()
+                    s.execute_command(True)  # config.last_stage=='agent' + additionally setup of last stage (pop from filtered sorted list, not for casual one); awfy is broken
                     if self.hotspot_pgo and s.exit_code == 0:
                         mx.copyfile(profile_path, latest_profile_path)
 
