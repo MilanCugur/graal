@@ -1127,7 +1127,8 @@ class SpecJvm2008BenchmarkSuite(mx_benchmark.JavaBenchmarkSuite):
         return [
             re.compile(
                 r"^(Noncompliant c|C)omposite result: (?P<score>[0-9]+((,|\.)[0-9]+)?)( SPECjvm2008 (Base|Peak))? ops/m$", # pylint: disable=line-too-long
-                re.MULTILINE)
+                re.MULTILINE),
+            re.compile(r'Successfully finished the last specified stage:.*$', re.MULTILINE)
         ]
 
     def failurePatterns(self):

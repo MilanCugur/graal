@@ -79,7 +79,9 @@ public final class RuntimeOptionParser {
         String[] args = initialArgs;
         if (SubstrateOptions.ParseRuntimeOptions.getValue()) {
             args = RuntimeOptionParser.singleton().parse(args, NORMAL_OPTION_PREFIX, GRAAL_OPTION_PREFIX, X_OPTION_PREFIX, true);
-            args = RuntimePropertyParser.parse(args);
+            if (SubstrateOptions.ParseRuntimeSystemProperties.getValue()) {
+                args = RuntimePropertyParser.parse(args);
+            }
         }
         return args;
     }
