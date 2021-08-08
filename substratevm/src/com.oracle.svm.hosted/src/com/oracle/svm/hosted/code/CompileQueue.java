@@ -754,7 +754,7 @@ public class CompileQueue {
          */
         aMethod.setAnalyzedGraph(null);
 
-        OptionValues options = getCustomizedOptions(hMethod, debug);
+        OptionValues options = getCustomizedOptions(debug);
         /*
          * The static analysis always needs NodeSourcePosition. But for AOT compilation, we only
          * need to preserve them when explicitly enabled, to reduce memory pressure.
@@ -914,7 +914,7 @@ public class CompileQueue {
                     Bytecode code = new ResolvedJavaMethodBytecode(method);
                     // DebugContext debug = new DebugContext(options,
                     // providers.getSnippetReflection());
-                    graph = new SubstrateIntrinsicGraphBuilder(getCustomizedOptions(method, debug), debug, providers,
+                    graph = new SubstrateIntrinsicGraphBuilder(getCustomizedOptions(debug), debug, providers,
                                     code).buildGraph(plugin);
                 }
             }
@@ -924,7 +924,7 @@ public class CompileQueue {
             }
             if (graph == null) {
                 needParsing = true;
-                graph = new StructuredGraph.Builder(getCustomizedOptions(method, debug), debug).method(method).build();
+                graph = new StructuredGraph.Builder(getCustomizedOptions(debug), debug).method(method).build();
             }
         }
         try (DebugContext.Scope s = debug.scope("Parsing", graph, method, this)) {
@@ -1004,7 +1004,7 @@ public class CompileQueue {
     protected void afterParse(HostedMethod method) {
     }
 
-    protected OptionValues getCustomizedOptions(HostedMethod method, DebugContext debug) {
+    protected OptionValues getCustomizedOptions(DebugContext debug) {
         return debug.getOptions();
     }
 

@@ -61,6 +61,10 @@ public abstract class ProfileData {
          */
         PROFILED,
         /**
+         * The profiling information was predicted by ML model.
+         */
+        PREDICTED,
+        /**
          * The profiling information comes from immature profiling information or some unknown
          * source.
          */
@@ -84,7 +88,7 @@ public abstract class ProfileData {
         }
 
         public static boolean isTrusted(ProfileSource source) {
-            return source == INJECTED || source == PROFILED;
+            return source == INJECTED || source == PROFILED || source == PREDICTED;
         }
     }
 
@@ -151,6 +155,10 @@ public abstract class ProfileData {
 
         public static BranchProbabilityData profiled(double probability) {
             return BranchProbabilityData.create(probability, ProfileSource.PROFILED);
+        }
+
+        public static BranchProbabilityData predicted(double probability) {
+            return BranchProbabilityData.create(probability, ProfileSource.PREDICTED);
         }
 
         /**
@@ -278,6 +286,10 @@ public abstract class ProfileData {
 
         public static SwitchProbabilityData profiled(double[] keyProbabilities) {
             return new SwitchProbabilityData(keyProbabilities, ProfileSource.PROFILED);
+        }
+
+        public static SwitchProbabilityData predicted(double[] keyProbabilities) {
+            return new SwitchProbabilityData(keyProbabilities, ProfileSource.PREDICTED);
         }
 
         public static SwitchProbabilityData unknown(double[] keyProbabilities) {
