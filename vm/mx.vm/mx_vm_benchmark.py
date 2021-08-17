@@ -170,7 +170,7 @@ class NativeImageVM(GraalVm):
     def __init__(self, name, config_name, extra_java_args=None, extra_launcher_args=None,
                  pgo_aot_inline=False, pgo_instrumented_iterations=0, pgo_inline_explored=False, hotspot_pgo=False,
                  is_gate=False, is_llvm=False, pgo_context_sensitive=True, gc=None, native_architecture=False,
-                 mlpgo_model=None, mlpgo_polite=False, mlpgo_multi_branch=False):
+                 mlpgo_model=None, mlpgo_use_model_cache=None, mlpgo_multi_branch=False, mlpgo_round=False):
         super(NativeImageVM, self).__init__(name, config_name, extra_java_args, extra_launcher_args)
         self.pgo_aot_inline = pgo_aot_inline
         self.pgo_instrumented_iterations = pgo_instrumented_iterations
@@ -182,7 +182,7 @@ class NativeImageVM(GraalVm):
         self.gc = gc
         self.native_architecture = native_architecture
         assert mlpgo_model in [None, 'tree', 'knn', 'dnn', 'mi-dnn'], 'Fatal Error invalid mlpgo-model: {}'.format(mlpgo_model)
-        self.mlpgo_model, self.mlpgo_polite, self.mlpgo_multi_branch = mlpgo_model, mlpgo_polite, mlpgo_multi_branch
+        self.mlpgo_model, self.mlpgo_use_model_cache, self.mlpgo_multi_branch, self.mlpgo_round = mlpgo_model, mlpgo_use_model_cache, mlpgo_multi_branch, mlpgo_round
 
     @staticmethod
     def supported_vm_arg_prefixes():
@@ -599,20 +599,18 @@ class NativeImageVM(GraalVm):
         pgo_args += ['-H:' + ('+' if self.pgo_context_sensitive else '-') + 'EnablePGOContextSensitivity']
         pgo_args += ['-H:+AOTInliner'] if self.pgo_aot_inline else ['-H:-AOTInliner']
 
-        if self.mlpgo_model == 'tree':
-            mlpgo_args = ['-H:+MLPGOTree']
-        elif self.mlpgo_model == 'knn':
-            mlpgo_args = ['-H:+MLPGOKnn']
-        elif self.mlpgo_model == 'dnn':
-            mlpgo_args = ['-H:+MLPGODnn', '-J-Djava.library.path='+os.environ['HOME']+'/.graal_ml/config_dnn/libtensorflow_jni_path/']
-        elif self.mlpgo_model == 'mi-dnn':
-            mlpgo_args = ['-H:+MLPGOMiDnn', '-J-Djava.library.path='+os.environ['HOME']+'/.graal_ml/config_mdnn/libtensorflow_jni_path/']
+        if self.mlpgo_model is not None:
+            mlpgo_args = ['-H:MLPGOModel={}'.format(self.mlpgo_model)]
+            if self.mlpgo_model in ('dnn', 'mi-dnn'):
+                mlpgo_args.append('-J-Djava.library.path='+os.environ['HOME']+'/.graal_ml/config_dnn/libtensorflow_jni_path/')
         else:
             mlpgo_args = []
-        if self.mlpgo_polite:
-            mlpgo_args += ['-H:+MLPGOPolite']
+        if self.mlpgo_use_model_cache:
+            mlpgo_args += ['-H:+MLPGOUseModelCache']
         if self.mlpgo_multi_branch:
             mlpgo_args += ['-H:+MLPGOMultiBranch']
+        if self.mlpgo_round:
+            mlpgo_args += ['-H:+MLPGORound']
 
         final_image_command = config.base_image_build_args + executable_name_args + (pgo_args if self.pgo_instrumented_iterations > 0 or (self.hotspot_pgo and os.path.exists(config.latest_profile_path)) else []) + mlpgo_args
         with stages.set_command(final_image_command) as s:
