@@ -170,7 +170,8 @@ class NativeImageVM(GraalVm):
     def __init__(self, name, config_name, extra_java_args=None, extra_launcher_args=None,
                  pgo_aot_inline=False, pgo_instrumented_iterations=0, pgo_inline_explored=False, hotspot_pgo=False,
                  is_gate=False, is_llvm=False, pgo_context_sensitive=True, gc=None, native_architecture=False,
-                 mlpgo_model=None, mlpgo_use_model_cache=None, mlpgo_multi_branch=False, mlpgo_round=False):
+                 mlpgo_model=None, mlpgo_use_model_cache=None, mlpgo_multi_branch=False, mlpgo_round=False,
+                 collect_jdk_cache=False, use_jdk_cache=False):
         super(NativeImageVM, self).__init__(name, config_name, extra_java_args, extra_launcher_args)
         self.pgo_aot_inline = pgo_aot_inline
         self.pgo_instrumented_iterations = pgo_instrumented_iterations
@@ -183,6 +184,7 @@ class NativeImageVM(GraalVm):
         self.native_architecture = native_architecture
         assert mlpgo_model in [None, 'tree', 'knn', 'dnn', 'mi-dnn'], 'Fatal Error invalid mlpgo-model: {}'.format(mlpgo_model)
         self.mlpgo_model, self.mlpgo_use_model_cache, self.mlpgo_multi_branch, self.mlpgo_round = mlpgo_model, mlpgo_use_model_cache, mlpgo_multi_branch, mlpgo_round
+        self.collect_jdk_cache, self.use_jdk_cache = collect_jdk_cache, use_jdk_cache
 
     @staticmethod
     def supported_vm_arg_prefixes():
@@ -576,6 +578,18 @@ class NativeImageVM(GraalVm):
         instrument_args = ['--pgo-instrument'] + ([] if i == 0 else pgo_args)
         instrument_args += ['-H:+InlineAllExplored'] if self.pgo_inline_explored else []
 
+        if self.collect_jdk_cache:
+            import json
+            jdk_cache_path = os.path.join(os.environ['HOME'], '.graal_ml/jdk_cache/')
+            if not os.path.isdir(jdk_cache_path):
+                mx.abort("Fatal Error: invalid jdk cache path: {}.".format(jdk_cache_path))
+            profile_package_prefixes_path = os.path.join(jdk_cache_path, 'profile_package_prefixes.json')
+            if not os.path.exists(profile_package_prefixes_path):
+                mx.abort("Fatal Error: missing profile package prefixes: {}".format(profile_package_prefixes_path))
+            with open(profile_package_prefixes_path, 'r') as f:
+                profile_package_prefixes = json.load(f)
+            instrument_args += ['-H:ProfilesPackagePrefixes={}'.format(','.join(profile_package_prefixes))]
+
         with stages.set_command(config.base_image_build_args + executable_name_args + instrument_args) as s:
             s.execute_command()
             if s.exit_code == 0:
@@ -612,7 +626,17 @@ class NativeImageVM(GraalVm):
         if self.mlpgo_round:
             mlpgo_args += ['-H:+MLPGORound']
 
-        final_image_command = config.base_image_build_args + executable_name_args + (pgo_args if self.pgo_instrumented_iterations > 0 or (self.hotspot_pgo and os.path.exists(config.latest_profile_path)) else []) + mlpgo_args
+        jdk_cache_args = []
+        if self.use_jdk_cache:
+            jdk_cache_path = os.path.join(os.environ['HOME'], '.graal_ml/jdk_cache/')
+            if not os.path.isdir(jdk_cache_path):
+                mx.abort("Fatal Error: invalid jdk cache path: {}.".format(jdk_cache_path))
+            jdk_cache_path = list(map(lambda f: os.path.join(jdk_cache_path, f),
+                                      filter(lambda f: f.endswith(config.profile_file_extension),
+                                             os.listdir(jdk_cache_path))))
+            jdk_cache_args += ['-H:DefaultProfilesUse={}'.format(','.join(jdk_cache_path))]
+
+        final_image_command = config.base_image_build_args + executable_name_args + (pgo_args if self.pgo_instrumented_iterations > 0 or (self.hotspot_pgo and os.path.exists(config.latest_profile_path)) else []) + mlpgo_args + jdk_cache_args
         with stages.set_command(final_image_command) as s:
             s.execute_command()
 
