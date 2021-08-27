@@ -148,7 +148,7 @@ class NativeImageVM(GraalVm):
             self.analysis_report_path = os.path.join(self.output_dir, self.executable_name + '-analysis.json')
             self.image_build_report_path = os.path.join(self.output_dir, self.executable_name + '-image-build-stats.json')
             self.base_image_build_args = [os.path.join(mx_sdk_vm_impl.graalvm_home(fatalIfMissing=True), 'bin', 'native-image')]
-            self.base_image_build_args += ['--no-fallback', '-g', '--allow-incomplete-classpath', '-H:DeadlockWatchdogInterval=30']
+            self.base_image_build_args += ['--no-fallback', '-g', '--allow-incomplete-classpath', '--no-server', '--enable-all-security-services', '-H:DeadlockWatchdogInterval=30']
             self.base_image_build_args += ['-H:+VerifyGraalGraphs', '-H:+VerifyPhases', '--diagnostics-mode'] if vm.is_gate else []
             self.base_image_build_args += ['-J-ea', '-J-esa'] if vm.is_gate and not bm_suite.skip_build_assertions(self.benchmark_name) else []
 
@@ -169,7 +169,9 @@ class NativeImageVM(GraalVm):
 
     def __init__(self, name, config_name, extra_java_args=None, extra_launcher_args=None,
                  pgo_aot_inline=False, pgo_instrumented_iterations=0, pgo_inline_explored=False, hotspot_pgo=False,
-                 is_gate=False, is_llvm=False, pgo_context_sensitive=True, gc=None, native_architecture=False):
+                 is_gate=False, is_llvm=False, pgo_context_sensitive=True, gc=None, native_architecture=False,
+                 mlpgo_model=None, mlpgo_use_model_cache=None, mlpgo_multi_branch=False, mlpgo_round=False,
+                 collect_jdk_cache=False, use_jdk_cache=False):
         super(NativeImageVM, self).__init__(name, config_name, extra_java_args, extra_launcher_args)
         self.pgo_aot_inline = pgo_aot_inline
         self.pgo_instrumented_iterations = pgo_instrumented_iterations
@@ -180,6 +182,9 @@ class NativeImageVM(GraalVm):
         self.is_llvm = is_llvm
         self.gc = gc
         self.native_architecture = native_architecture
+        assert mlpgo_model in [None, 'tree', 'knn', 'dnn', 'mi-dnn'], 'Fatal Error invalid mlpgo-model: {}'.format(mlpgo_model)
+        self.mlpgo_model, self.mlpgo_use_model_cache, self.mlpgo_multi_branch, self.mlpgo_round = mlpgo_model, mlpgo_use_model_cache, mlpgo_multi_branch, mlpgo_round
+        self.collect_jdk_cache, self.use_jdk_cache = collect_jdk_cache, use_jdk_cache
 
     @staticmethod
     def supported_vm_arg_prefixes():
@@ -573,6 +578,18 @@ class NativeImageVM(GraalVm):
         instrument_args = ['--pgo-instrument'] + ([] if i == 0 else pgo_args)
         instrument_args += ['-H:+InlineAllExplored'] if self.pgo_inline_explored else []
 
+        if self.collect_jdk_cache:
+            import json
+            jdk_cache_path = os.path.join(os.environ['HOME'], '.graal_ml/jdk_cache/')
+            if not os.path.isdir(jdk_cache_path):
+                mx.abort("Fatal Error: invalid jdk cache path: {}.".format(jdk_cache_path))
+            profile_package_prefixes_path = os.path.join(jdk_cache_path, 'profile_package_prefixes.json')
+            if not os.path.exists(profile_package_prefixes_path):
+                mx.abort("Fatal Error: missing profile package prefixes: {}".format(profile_package_prefixes_path))
+            with open(profile_package_prefixes_path, 'r') as f:
+                profile_package_prefixes = json.load(f)
+            instrument_args += ['-H:ProfilesPackagePrefixes={}'.format(','.join(profile_package_prefixes))]
+
         with stages.set_command(config.base_image_build_args + executable_name_args + instrument_args) as s:
             s.execute_command()
             if s.exit_code == 0:
@@ -595,18 +612,43 @@ class NativeImageVM(GraalVm):
         pgo_args = ['--pgo=' + config.latest_profile_path, '-H:+VerifyPGOProfiles', '-H:VerificationDumpFile=' + pgo_verification_output_path]
         pgo_args += ['-H:' + ('+' if self.pgo_context_sensitive else '-') + 'EnablePGOContextSensitivity']
         pgo_args += ['-H:+AOTInliner'] if self.pgo_aot_inline else ['-H:-AOTInliner']
-        final_image_command = config.base_image_build_args + executable_name_args + (pgo_args if self.pgo_instrumented_iterations > 0 or (self.hotspot_pgo and os.path.exists(config.latest_profile_path)) else [])
+
+        if self.mlpgo_model is not None:
+            mlpgo_args = ['-H:MLPGOModel={}'.format(self.mlpgo_model)]
+            if self.mlpgo_model in ('dnn', 'mi-dnn'):
+                mlpgo_args.append('-J-Djava.library.path='+os.environ['HOME']+'/.graal_ml/config_dnn/libtensorflow_jni_path/')
+        else:
+            mlpgo_args = []
+        if self.mlpgo_use_model_cache:
+            mlpgo_args += ['-H:+MLPGOUseModelCache']
+        if self.mlpgo_multi_branch:
+            mlpgo_args += ['-H:+MLPGOMultiBranch']
+        if self.mlpgo_round:
+            mlpgo_args += ['-H:+MLPGORound']
+
+        jdk_cache_args = []
+        if self.use_jdk_cache:
+            jdk_cache_path = os.path.join(os.environ['HOME'], '.graal_ml/jdk_cache/')
+            if not os.path.isdir(jdk_cache_path):
+                mx.abort("Fatal Error: invalid jdk cache path: {}.".format(jdk_cache_path))
+            jdk_cache_path = list(map(lambda f: os.path.join(jdk_cache_path, f),
+                                      filter(lambda f: f.endswith(config.profile_file_extension),
+                                             os.listdir(jdk_cache_path))))
+            jdk_cache_args += ['-H:DefaultProfilesUse={}'.format(','.join(jdk_cache_path))]
+
+        final_image_command = config.base_image_build_args + executable_name_args + (pgo_args if self.pgo_instrumented_iterations > 0 or (self.hotspot_pgo and os.path.exists(config.latest_profile_path)) else []) + mlpgo_args + jdk_cache_args
         with stages.set_command(final_image_command) as s:
             s.execute_command()
 
     def run_stage_run(self, config, stages, out):
         image_path = os.path.join(config.output_dir, config.final_image_name)
-        with stages.set_command([image_path] + config.image_run_args) as s:
+        with stages.set_command([image_path] + config.image_run_args + ['-XX:MaxHeapSize=24G', '-Xmn4G']) as s:
             s.execute_command(vm=self)
             if s.exit_code == 0:
                 # The image size for benchmarks is tracked by printing on stdout and matching the rule.
                 image_size = os.stat(image_path).st_size
-                out('The executed image size for benchmark ' + config.benchmark_suite_name + ':' + config.benchmark_name + ' is ' + str(image_size) + ' B')
+                available_benchmark_name = config.executable_name if (config.benchmark_suite_name is None) or (config.benchmark_name is None) else config.benchmark_suite_name + ':' + config.benchmark_name
+                out('The executed image size for benchmark ' + available_benchmark_name + ' is ' + str(image_size) + ' B')
                 image_sections_command = "objdump -h " + image_path
                 out(subprocess.check_output(image_sections_command, shell=True, universal_newlines=True))
                 for config_type in ['jni', 'proxy', 'predefined-classes', 'reflect', 'resource', 'serialization']:

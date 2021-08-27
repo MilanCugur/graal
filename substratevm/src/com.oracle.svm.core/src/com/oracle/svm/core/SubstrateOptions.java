@@ -323,6 +323,9 @@ public class SubstrateOptions {
     @Option(help = "Parse and consume standard options and system properties from the command line arguments when the VM is created.")//
     public static final HostedOptionKey<Boolean> ParseRuntimeOptions = new HostedOptionKey<>(true);
 
+    @Option(help = "Parse and consume runtime/java system properties (those that start with '-D')", type = OptionType.Debug)//
+    public static final HostedOptionKey<Boolean> ParseRuntimeSystemProperties = new HostedOptionKey<>(true);
+
     @Option(help = "Enable wildcard expansion in command line arguments on Windows.")//
     public static final HostedOptionKey<Boolean> EnableWildcardExpansion = new HostedOptionKey<>(true);
 

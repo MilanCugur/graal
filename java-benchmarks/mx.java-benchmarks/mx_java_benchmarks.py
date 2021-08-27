@@ -1127,7 +1127,8 @@ class SpecJvm2008BenchmarkSuite(mx_benchmark.JavaBenchmarkSuite):
         return [
             re.compile(
                 r"^(Noncompliant c|C)omposite result: (?P<score>[0-9]+((,|\.)[0-9]+)?)( SPECjvm2008 (Base|Peak))? ops/m$", # pylint: disable=line-too-long
-                re.MULTILINE)
+                re.MULTILINE),
+            re.compile(r'Successfully finished the last specified stage:.*$', re.MULTILINE)
         ]
 
     def failurePatterns(self):
@@ -1946,9 +1947,13 @@ _awfyConfig = {
     "Towers"     : 600
 }
 
-class AWFYBenchmarkSuite(mx_benchmark.JavaBenchmarkSuite, mx_benchmark.AveragingBenchmarkMixin):
+class AWFYBenchmarkSuite(mx_benchmark.JavaBenchmarkSuite, mx_benchmark.AveragingBenchmarkMixin, mx_sdk_benchmark.NativeImageBenchmarkMixin):
     """Are we fast yet? benchmark suite implementation.
     """
+    def __init__(self, *args, **kwargs):
+        super(AWFYBenchmarkSuite, self).__init__(*args, **kwargs)
+        self.benchmark_name = 'awfy'
+
     def name(self):
         return "awfy"
 
