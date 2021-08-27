@@ -1947,9 +1947,13 @@ _awfyConfig = {
     "Towers"     : 600
 }
 
-class AWFYBenchmarkSuite(mx_benchmark.JavaBenchmarkSuite, mx_benchmark.AveragingBenchmarkMixin):
+class AWFYBenchmarkSuite(mx_benchmark.JavaBenchmarkSuite, mx_benchmark.AveragingBenchmarkMixin, mx_sdk_benchmark.NativeImageBenchmarkMixin):
     """Are we fast yet? benchmark suite implementation.
     """
+    def __init__(self, *args, **kwargs):
+        super(AWFYBenchmarkSuite, self).__init__(*args, **kwargs)
+        self.benchmark_name = 'awfy'
+
     def name(self):
         return "awfy"
 
